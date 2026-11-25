@@ -1,0 +1,74 @@
+[
+  {
+    "id": "WARMUP-01",
+    "tier": "Warmup",
+    "description": "基礎 4 方向均衡暖身盤面。",
+    "board": "HHWDHDDDHDWHWWDHWWFWFWGWLFLLGG",
+    "maxSteps": 20,
+    "allowDiagonal": false,
+    "seed": 1001,
+    "timeBudgetMs": 500
+  },
+  {
+    "id": "WARMUP-02",
+    "tier": "Warmup",
+    "description": "指定屬性 + 水屬全體攻擊 + 珠色權重暖身盤面。",
+    "board": "GGHWWGWGWWLDGWWDDLWWGGFFLFDFDD",
+    "maxSteps": 18,
+    "allowDiagonal": false,
+    "seed": 1002,
+    "timeBudgetMs": 500,
+    "requiredColors": [
+      "Water",
+      "Fire",
+      "Wood"
+    ],
+    "requiredColorsFirstWaveOnly": true,
+    "requireAoeColors": [
+      "Water"
+    ],
+    "colorWeights": {
+      "Water": 2,
+      "Fire": 1.5,
+      "Wood": 1.5,
+      "Light": 1,
+      "Dark": 1,
+      "Heart": 0.5
+    }
+  },
+  {
+    "id": "WARMUP-03",
+    "tier": "Warmup",
+    "description": "障礙物 + 8 方向斜轉 + 火屬拼圖盾暖身盤面。",
+    "board": "LHHGLWHHWGFLGFFHHLDWLWDDDLDWDL",
+    "obstacleCoords": [
+      [
+        0,
+        0
+      ],
+      [
+        4,
+        5
+      ]
+    ],
+    "puzzleCoords": [
+      [
+        2,
+        1
+      ],
+      [
+        2,
+        2
+      ],
+      [
+        2,
+        3
+      ]
+    ],
+    "puzzleColor": "Fire",
+    "maxSteps": 20,
+    "allowDiagonal": true,
+    "seed": 1003,
+    "timeBudgetMs": 500
+  }
+]

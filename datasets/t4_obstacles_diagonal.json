@@ -1,0 +1,302 @@
+[
+  {
+    "id": "T4-01",
+    "tier": "T4",
+    "description": "四角障礙物，允許斜向移動。",
+    "board": "GWGGFGHGHHGFWLLDFDLHWFDWHHWFWF",
+    "obstacleCoords": [
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        5
+      ],
+      [
+        4,
+        0
+      ],
+      [
+        4,
+        5
+      ]
+    ],
+    "maxSteps": 20,
+    "allowDiagonal": true,
+    "seed": 40101,
+    "timeBudgetMs": 1500
+  },
+  {
+    "id": "T4-02",
+    "tier": "T4",
+    "description": "4 個內側柱狀障礙物，支援 8 方向轉珠。",
+    "board": "LLHLGGHHWGGFWWFGWGLLFDWWFFLFDD",
+    "obstacleCoords": [
+      [
+        1,
+        1
+      ],
+      [
+        1,
+        4
+      ],
+      [
+        3,
+        1
+      ],
+      [
+        3,
+        4
+      ]
+    ],
+    "maxSteps": 22,
+    "allowDiagonal": true,
+    "seed": 40102,
+    "timeBudgetMs": 1500
+  },
+  {
+    "id": "T4-03",
+    "tier": "T4",
+    "description": "斜向閘門障礙，需透過 8 方向斜轉捷徑通行。",
+    "board": "FGFLFLFFGFDLWWGDDHHGWHGHGGHHGG",
+    "obstacleCoords": [
+      [
+        1,
+        2
+      ],
+      [
+        2,
+        1
+      ],
+      [
+        2,
+        4
+      ],
+      [
+        3,
+        3
+      ]
+    ],
+    "maxSteps": 24,
+    "allowDiagonal": true,
+    "seed": 40103,
+    "timeBudgetMs": 1500
+  },
+  {
+    "id": "T4-04",
+    "tier": "T4",
+    "description": "交錯垂直牆面，需走 S 型彎道與斜向路徑。",
+    "board": "WDWLFGWDDFFGHHLLGWGLHWFWGGLFLF",
+    "obstacleCoords": [
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        3,
+        3
+      ],
+      [
+        4,
+        3
+      ]
+    ],
+    "maxSteps": 24,
+    "allowDiagonal": true,
+    "seed": 40104,
+    "timeBudgetMs": 1500
+  },
+  {
+    "id": "T4-05",
+    "tier": "T4",
+    "description": "5 個 X 型排列障礙物，支援 8 方向連通。",
+    "board": "LLFLFGFFHFGWWHHFGWGWDLWLGWGLDD",
+    "obstacleCoords": [
+      [
+        1,
+        1
+      ],
+      [
+        1,
+        3
+      ],
+      [
+        2,
+        2
+      ],
+      [
+        3,
+        1
+      ],
+      [
+        3,
+        3
+      ]
+    ],
+    "maxSteps": 26,
+    "allowDiagonal": true,
+    "seed": 40105,
+    "timeBudgetMs": 1500
+  },
+  {
+    "id": "T4-06",
+    "tier": "T4",
+    "description": "兩側水平夾擊障礙，僅留中央通道。",
+    "board": "FLGGHHGLGFHGFFLGWWFLFDWDLLFDFF",
+    "obstacleCoords": [
+      [
+        2,
+        0
+      ],
+      [
+        2,
+        1
+      ],
+      [
+        2,
+        4
+      ],
+      [
+        2,
+        5
+      ]
+    ],
+    "maxSteps": 22,
+    "allowDiagonal": true,
+    "seed": 40106,
+    "timeBudgetMs": 1500
+  },
+  {
+    "id": "T4-07",
+    "tier": "T4",
+    "description": "鋸齒狀中央隔板障礙，僅能透過斜轉穿越。",
+    "board": "WLWFWWHLLWFFHGHGWGWWGDFGGWFDFD",
+    "obstacleCoords": [
+      [
+        0,
+        3
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        2,
+        3
+      ],
+      [
+        3,
+        2
+      ],
+      [
+        4,
+        3
+      ]
+    ],
+    "maxSteps": 25,
+    "allowDiagonal": true,
+    "seed": 40107,
+    "timeBudgetMs": 1500
+  },
+  {
+    "id": "T4-08",
+    "tier": "T4",
+    "description": "6 個分散燃燒障礙物，支援 8 方向轉珠。",
+    "board": "LLHWGLHLFGGLFHWWLWDDFGWWFFDFGG",
+    "obstacleCoords": [
+      [
+        0,
+        1
+      ],
+      [
+        1,
+        4
+      ],
+      [
+        2,
+        0
+      ],
+      [
+        2,
+        3
+      ],
+      [
+        3,
+        1
+      ],
+      [
+        4,
+        4
+      ]
+    ],
+    "maxSteps": 26,
+    "allowDiagonal": true,
+    "seed": 40108,
+    "timeBudgetMs": 1500
+  },
+  {
+    "id": "T4-09",
+    "tier": "T4",
+    "description": "成對障礙物周圍的 4 方向走廊繞道。",
+    "board": "FFGWGGFDDWWLDHHLLFHDDFFDDLLDLD",
+    "obstacleCoords": [
+      [
+        1,
+        1
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        3,
+        3
+      ],
+      [
+        3,
+        4
+      ]
+    ],
+    "maxSteps": 18,
+    "allowDiagonal": false,
+    "seed": 40109,
+    "timeBudgetMs": 1500
+  },
+  {
+    "id": "T4-10",
+    "tier": "T4",
+    "description": "5 個障礙物的 4 方向迷宮路徑規劃。",
+    "board": "WGWLGLWWGWWLGWHFFWWHGDDFHGFFDF",
+    "obstacleCoords": [
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        2,
+        4
+      ],
+      [
+        3,
+        1
+      ],
+      [
+        4,
+        1
+      ]
+    ],
+    "maxSteps": 24,
+    "allowDiagonal": false,
+    "seed": 40110,
+    "timeBudgetMs": 1500
+  }
+]

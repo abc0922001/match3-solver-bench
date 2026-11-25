@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <ServerGarbageCollection>false</ServerGarbageCollection>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\OrbSolver.Contracts\OrbSolver.Contracts.csproj" />
+  </ItemGroup>
+</Project>

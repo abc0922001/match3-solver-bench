@@ -1,0 +1,102 @@
+[
+  {
+    "id": "T1-01",
+    "tier": "T1",
+    "description": "均勻 5×6 均衡盤面，目標 ≥ 6 Combo。",
+    "board": "GGDFDDFFDDHHDDHGLLHDDLWWHHFWFF",
+    "maxSteps": 22,
+    "allowDiagonal": false,
+    "seed": 10101,
+    "timeBudgetMs": 1000
+  },
+  {
+    "id": "T1-02",
+    "tier": "T1",
+    "description": "均勻 5×6 盤面，含 2 波重力連鎖。",
+    "board": "LGFFHGHDGDHGHHWFWWGLDHLGFHWGLD",
+    "maxSteps": 24,
+    "allowDiagonal": false,
+    "seed": 10102,
+    "timeBudgetMs": 1000
+  },
+  {
+    "id": "T1-03",
+    "tier": "T1",
+    "description": "5 色高密度配置，適合高 Combo 連鎖。",
+    "board": "LGLLDLGWGDWWWGFWLWGGDLFFFFHHFH",
+    "maxSteps": 26,
+    "allowDiagonal": false,
+    "seed": 10103,
+    "timeBudgetMs": 1000
+  },
+  {
+    "id": "T1-04",
+    "tier": "T1",
+    "description": "4 主色高密度高 Combo 盤面。",
+    "board": "HWHWLLHWWLFFWGWFGGGLGDGDLLFDFF",
+    "maxSteps": 28,
+    "allowDiagonal": false,
+    "seed": 10104,
+    "timeBudgetMs": 1000
+  },
+  {
+    "id": "T1-05",
+    "tier": "T1",
+    "description": "跨列交錯的 3 色珠群配置。",
+    "board": "FFDFGGDDGGLLGGFWWLFFLHHWWWHWLL",
+    "maxSteps": 23,
+    "allowDiagonal": false,
+    "seed": 10105,
+    "timeBudgetMs": 1000
+  },
+  {
+    "id": "T1-06",
+    "tier": "T1",
+    "description": "垂直落珠雙重連鎖配置。",
+    "board": "FHFGDFHDWGDFDWWHLLFDLGLFGDFHDW",
+    "maxSteps": 25,
+    "allowDiagonal": false,
+    "seed": 10106,
+    "timeBudgetMs": 1000
+  },
+  {
+    "id": "T1-07",
+    "tier": "T1",
+    "description": "高 Combo 分欄盤面。",
+    "board": "HHFHWWGGFWFFFLGDLLLFLWGGWLWGDD",
+    "maxSteps": 27,
+    "allowDiagonal": false,
+    "seed": 10107,
+    "timeBudgetMs": 1000
+  },
+  {
+    "id": "T1-08",
+    "tier": "T1",
+    "description": "具緊湊 L／T 型消除潛力的均衡盤面。",
+    "board": "LLFGFFWWLDGGFFWDWDHFLLDWHLHWDD",
+    "maxSteps": 22,
+    "allowDiagonal": false,
+    "seed": 10108,
+    "timeBudgetMs": 1000
+  },
+  {
+    "id": "T1-09",
+    "tier": "T1",
+    "description": "3 波差異化直欄連鎖盤面。",
+    "board": "DWDHHDLFFLWDLFFGGWWWDGHHLFHFLW",
+    "maxSteps": 26,
+    "allowDiagonal": false,
+    "seed": 10109,
+    "timeBudgetMs": 1000
+  },
+  {
+    "id": "T1-10",
+    "tier": "T1",
+    "description": "最高可達 9 Combo 潛力的極限盤面。",
+    "board": "GHGLFHGFHLWWFWLFFWWLFWGGLLDGDD",
+    "maxSteps": 28,
+    "allowDiagonal": false,
+    "seed": 10110,
+    "timeBudgetMs": 1000
+  }
+]

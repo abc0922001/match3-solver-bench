@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\OrbSolver.Contracts\OrbSolver.Contracts.csproj" />
+    <ProjectReference Include="..\OrbSolver.Core\OrbSolver.Core.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="OrbSolver.Runner.Tests" />
+  </ItemGroup>
+</Project>

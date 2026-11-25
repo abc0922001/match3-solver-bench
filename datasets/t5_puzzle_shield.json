@@ -1,0 +1,570 @@
+[
+  {
+    "id": "T5-01",
+    "tier": "T5",
+    "description": "嚴格 5 格水屬 L 型拼圖盾 + 四角障礙物 + 指定 3 色。",
+    "board": "HLFGLHWDWGDGWFWWGGFGFWWHFFLDGW",
+    "obstacleCoords": [
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        5
+      ],
+      [
+        4,
+        0
+      ],
+      [
+        4,
+        5
+      ]
+    ],
+    "puzzleCoords": [
+      [
+        1,
+        2
+      ],
+      [
+        2,
+        2
+      ],
+      [
+        3,
+        2
+      ],
+      [
+        3,
+        3
+      ],
+      [
+        3,
+        4
+      ]
+    ],
+    "puzzleColor": "Water",
+    "maxSteps": 24,
+    "allowDiagonal": false,
+    "seed": 50101,
+    "timeBudgetMs": 2000,
+    "requiredColors": [
+      "Water",
+      "Fire",
+      "Wood"
+    ],
+    "colorWeights": {
+      "Water": 2,
+      "Fire": 1,
+      "Wood": 1,
+      "Light": 1,
+      "Dark": 1,
+      "Heart": 0.5
+    }
+  },
+  {
+    "id": "T5-02",
+    "tier": "T5",
+    "description": "嚴格 5 格火屬 T 型拼圖盾 + 火屬全體攻擊 + 第一波首消。",
+    "board": "FWLFLLWFWFDDLHFWGLFWFWGDLGLHHL",
+    "obstacleCoords": [
+      [
+        0,
+        1
+      ],
+      [
+        4,
+        4
+      ]
+    ],
+    "puzzleCoords": [
+      [
+        1,
+        1
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        3
+      ],
+      [
+        2,
+        2
+      ],
+      [
+        3,
+        2
+      ]
+    ],
+    "puzzleColor": "Fire",
+    "maxSteps": 25,
+    "allowDiagonal": false,
+    "seed": 50102,
+    "timeBudgetMs": 2000,
+    "requiredColors": [
+      "Fire",
+      "Light"
+    ],
+    "requiredColorsFirstWaveOnly": true,
+    "requireAoeColors": [
+      "Fire"
+    ]
+  },
+  {
+    "id": "T5-03",
+    "tier": "T5",
+    "description": "嚴格 5 格木屬十字（+）拼圖盾。",
+    "board": "HWDDFLWLGFHLGLGGHGWGWHDDWFHFLW",
+    "obstacleCoords": [
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        5
+      ]
+    ],
+    "puzzleCoords": [
+      [
+        1,
+        2
+      ],
+      [
+        2,
+        1
+      ],
+      [
+        2,
+        2
+      ],
+      [
+        2,
+        3
+      ],
+      [
+        3,
+        2
+      ]
+    ],
+    "puzzleColor": "Wood",
+    "maxSteps": 26,
+    "allowDiagonal": false,
+    "seed": 50103,
+    "timeBudgetMs": 2000,
+    "requiredColors": [
+      "Water",
+      "Wood",
+      "Dark"
+    ]
+  },
+  {
+    "id": "T5-04",
+    "tier": "T5",
+    "description": "嚴格 4 格光屬水平直線拼圖盾。",
+    "board": "HGGDGDFLGGHDDWLDLGGGWLDWFDLFLL",
+    "obstacleCoords": [
+      [
+        1,
+        0
+      ],
+      [
+        3,
+        5
+      ]
+    ],
+    "puzzleCoords": [
+      [
+        2,
+        1
+      ],
+      [
+        2,
+        2
+      ],
+      [
+        2,
+        3
+      ],
+      [
+        2,
+        4
+      ]
+    ],
+    "puzzleColor": "Light",
+    "maxSteps": 22,
+    "allowDiagonal": false,
+    "seed": 50104,
+    "timeBudgetMs": 2000,
+    "requiredColors": [
+      "Light",
+      "Dark"
+    ],
+    "requiredColorsFirstWaveOnly": true
+  },
+  {
+    "id": "T5-05",
+    "tier": "T5",
+    "description": "嚴格 6 格暗屬 2×3 方塊拼圖盾 + 暗屬全體攻擊。",
+    "board": "HFLLHFGDDWDLWDDGDHWLHWWFFGHWFF",
+    "obstacleCoords": [
+      [
+        0,
+        4
+      ],
+      [
+        4,
+        1
+      ]
+    ],
+    "puzzleCoords": [
+      [
+        1,
+        1
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        3
+      ],
+      [
+        2,
+        1
+      ],
+      [
+        2,
+        2
+      ],
+      [
+        2,
+        3
+      ]
+    ],
+    "puzzleColor": "Dark",
+    "maxSteps": 26,
+    "allowDiagonal": false,
+    "seed": 50105,
+    "timeBudgetMs": 2000,
+    "requireAoeColors": [
+      "Dark"
+    ],
+    "colorWeights": {
+      "Water": 1,
+      "Fire": 1,
+      "Wood": 1,
+      "Light": 1,
+      "Dark": 2.5,
+      "Heart": 0.5
+    }
+  },
+  {
+    "id": "T5-06",
+    "tier": "T5",
+    "description": "柱狀障礙間的嚴格 5 格任意色水平橫條拼圖盾（8 方向）。",
+    "board": "WWHGDWLDWDFFGWGGLGFLGLDFWFFLFF",
+    "obstacleCoords": [
+      [
+        1,
+        1
+      ],
+      [
+        1,
+        4
+      ],
+      [
+        3,
+        1
+      ],
+      [
+        3,
+        4
+      ]
+    ],
+    "puzzleCoords": [
+      [
+        2,
+        0
+      ],
+      [
+        2,
+        1
+      ],
+      [
+        2,
+        2
+      ],
+      [
+        2,
+        3
+      ],
+      [
+        2,
+        4
+      ]
+    ],
+    "puzzleColor": "Empty",
+    "maxSteps": 28,
+    "allowDiagonal": true,
+    "seed": 50106,
+    "timeBudgetMs": 2000,
+    "requiredColors": [
+      "Water",
+      "Fire",
+      "Wood",
+      "Light"
+    ]
+  },
+  {
+    "id": "T5-07",
+    "tier": "T5",
+    "description": "嚴格 7 格水屬 U 型拼圖盾（8 方向）。",
+    "board": "GGFGDFWLWHLFFHWWFHWWDFGWLWLWWD",
+    "obstacleCoords": [
+      [
+        0,
+        2
+      ],
+      [
+        4,
+        2
+      ]
+    ],
+    "puzzleCoords": [
+      [
+        1,
+        0
+      ],
+      [
+        2,
+        0
+      ],
+      [
+        3,
+        0
+      ],
+      [
+        3,
+        1
+      ],
+      [
+        3,
+        2
+      ],
+      [
+        2,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "puzzleColor": "Water",
+    "maxSteps": 28,
+    "allowDiagonal": true,
+    "seed": 50107,
+    "timeBudgetMs": 2000,
+    "requireAoeColors": [
+      "Water"
+    ]
+  },
+  {
+    "id": "T5-08",
+    "tier": "T5",
+    "description": "嚴格 7 格火屬 Z 型拼圖盾。",
+    "board": "WLHGLGHDFFWWGFGGFDGDLFLFWFDFLL",
+    "obstacleCoords": [
+      [
+        0,
+        0
+      ],
+      [
+        2,
+        5
+      ],
+      [
+        4,
+        0
+      ]
+    ],
+    "puzzleCoords": [
+      [
+        1,
+        1
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        3
+      ],
+      [
+        2,
+        3
+      ],
+      [
+        3,
+        3
+      ],
+      [
+        3,
+        4
+      ],
+      [
+        3,
+        5
+      ]
+    ],
+    "puzzleColor": "Fire",
+    "maxSteps": 24,
+    "allowDiagonal": false,
+    "seed": 50108,
+    "timeBudgetMs": 2000,
+    "requiredColors": [
+      "Fire",
+      "Wood",
+      "Light"
+    ]
+  },
+  {
+    "id": "T5-09",
+    "tier": "T5",
+    "description": "嚴格 8 格任意色 3×3 中空環形拼圖盾（8 方向）。",
+    "board": "LHFHWWLLFWGGFLHFFWLFFDGDLLDFDD",
+    "obstacleCoords": [
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        5
+      ],
+      [
+        4,
+        0
+      ],
+      [
+        4,
+        5
+      ]
+    ],
+    "puzzleCoords": [
+      [
+        1,
+        1
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        3
+      ],
+      [
+        2,
+        1
+      ],
+      [
+        2,
+        3
+      ],
+      [
+        3,
+        1
+      ],
+      [
+        3,
+        2
+      ],
+      [
+        3,
+        3
+      ]
+    ],
+    "puzzleColor": "Empty",
+    "maxSteps": 30,
+    "allowDiagonal": true,
+    "seed": 50109,
+    "timeBudgetMs": 2000,
+    "requiredColors": [
+      "Water",
+      "Fire",
+      "Wood",
+      "Light",
+      "Dark"
+    ]
+  },
+  {
+    "id": "T5-10",
+    "tier": "T5",
+    "description": "嚴格 5 格光屬 L 型拼圖盾 + 五屬第一波首消 + 光屬全體攻擊。",
+    "board": "DLWLFLHWLDLWWDGGFDDGLFWFDGGHWD",
+    "obstacleCoords": [
+      [
+        0,
+        0
+      ],
+      [
+        4,
+        5
+      ]
+    ],
+    "puzzleCoords": [
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        3
+      ],
+      [
+        1,
+        4
+      ],
+      [
+        2,
+        2
+      ],
+      [
+        3,
+        2
+      ]
+    ],
+    "puzzleColor": "Light",
+    "maxSteps": 30,
+    "allowDiagonal": false,
+    "seed": 50110,
+    "timeBudgetMs": 2000,
+    "requiredColors": [
+      "Water",
+      "Fire",
+      "Wood",
+      "Light",
+      "Dark"
+    ],
+    "requiredColorsFirstWaveOnly": true,
+    "requireAoeColors": [
+      "Light"
+    ],
+    "colorWeights": {
+      "Water": 1.2,
+      "Fire": 1.2,
+      "Wood": 1.2,
+      "Light": 2.5,
+      "Dark": 1.2,
+      "Heart": 0.5
+    }
+  }
+]

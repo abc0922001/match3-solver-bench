@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <PackageReference Include="xunit" />
+    <ProjectReference Include="..\..\..\..\src\OrbSolver.Contracts\OrbSolver.Contracts.csproj" />
+  </ItemGroup>
+  <Import Project="..\..\..\..\solvers\Directory.Build.targets" />
+</Project>

@@ -1,0 +1,3 @@
+<Project>
+  <Import Project="{{REPO_ROOT}}\Directory.Build.props" />
+</Project>

@@ -1,0 +1,16 @@
+<Project>
+  <Target Name="EnforceSolverPolicy" BeforeTargets="CoreCompile">
+    <Error Condition="'@(PackageReference)' != ''"
+           Text="[Anti-Cheat] Solver project '$(MSBuildProjectName)' is forbidden from referencing external NuGet packages: @(PackageReference)" />
+
+    <Error Condition="'$(AllowUnsafeBlocks)' == 'true'"
+           Text="[Anti-Cheat] Solver project '$(MSBuildProjectName)' is forbidden from enabling AllowUnsafeBlocks." />
+
+    <ItemGroup>
+      <_ForbiddenProjectRefs Include="@(ProjectReference)"
+                             Condition="!$([System.String]::Copy('%(Filename)').Equals('OrbSolver.Contracts', System.StringComparison.OrdinalIgnoreCase))" />
+    </ItemGroup>
+    <Error Condition="'@(_ForbiddenProjectRefs)' != ''"
+           Text="[Anti-Cheat] Solver project '$(MSBuildProjectName)' may only reference OrbSolver.Contracts. Found: @(_ForbiddenProjectRefs)" />
+  </Target>
+</Project>

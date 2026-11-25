@@ -1,0 +1,102 @@
+[
+  {
+    "id": "T2-01",
+    "tier": "T2",
+    "description": "嚴格 8 步限制，可達成 ≥ 4 Combo。",
+    "board": "DDFGFFGGDWHWWWGDFWGFWGHLWWGWDH",
+    "maxSteps": 8,
+    "allowDiagonal": false,
+    "seed": 20101,
+    "timeBudgetMs": 500
+  },
+  {
+    "id": "T2-02",
+    "tier": "T2",
+    "description": "9 步 2 波連鎖盤面。",
+    "board": "DHWWGDDHGLGDGGDLFFDHWFGDLGFLHW",
+    "maxSteps": 9,
+    "allowDiagonal": false,
+    "seed": 20102,
+    "timeBudgetMs": 500
+  },
+  {
+    "id": "T2-03",
+    "tier": "T2",
+    "description": "10 步限制，可達成 ≥ 5 Combo。",
+    "board": "LLGFHHFFHLFFDFDWFHGDGFLFFGFHLH",
+    "maxSteps": 10,
+    "allowDiagonal": false,
+    "seed": 20103,
+    "timeBudgetMs": 500
+  },
+  {
+    "id": "T2-04",
+    "tier": "T2",
+    "description": "11 步限制，可達成 ≥ 5 Combo。",
+    "board": "HDFLFFGDGGLLDGDDLHFHGWGLGHHWFG",
+    "maxSteps": 11,
+    "allowDiagonal": false,
+    "seed": 20104,
+    "timeBudgetMs": 500
+  },
+  {
+    "id": "T2-05",
+    "tier": "T2",
+    "description": "12 步限制，可達成 ≥ 6 Combo。",
+    "board": "HHLFLLGWHFGFGHGGWGWGWGLHFWFFHW",
+    "maxSteps": 12,
+    "allowDiagonal": false,
+    "seed": 20105,
+    "timeBudgetMs": 500
+  },
+  {
+    "id": "T2-06",
+    "tier": "T2",
+    "description": "13 步 2 波連鎖，可達成 ≥ 6 Combo。",
+    "board": "WGFLHWWGFLHWHLHHDDWHGDGWLHFDWF",
+    "maxSteps": 13,
+    "allowDiagonal": false,
+    "seed": 20106,
+    "timeBudgetMs": 500
+  },
+  {
+    "id": "T2-07",
+    "tier": "T2",
+    "description": "14 步限制，可達成 ≥ 6 Combo。",
+    "board": "FHFLFLHHWDLDWWGGDGWWGFGGLLWLFF",
+    "maxSteps": 14,
+    "allowDiagonal": false,
+    "seed": 20107,
+    "timeBudgetMs": 500
+  },
+  {
+    "id": "T2-08",
+    "tier": "T2",
+    "description": "相鄰橫列間的緊湊 9 步交換連鎖。",
+    "board": "GLFWFDLHDWWGHHWHGWDDHGWGLFDDWW",
+    "maxSteps": 9,
+    "allowDiagonal": false,
+    "seed": 20108,
+    "timeBudgetMs": 500
+  },
+  {
+    "id": "T2-09",
+    "tier": "T2",
+    "description": "11 步中央直欄連鎖。",
+    "board": "LGWFHLLGWFHLHWHHDDLFGDHLFHDLGW",
+    "maxSteps": 11,
+    "allowDiagonal": false,
+    "seed": 20109,
+    "timeBudgetMs": 500
+  },
+  {
+    "id": "T2-10",
+    "tier": "T2",
+    "description": "13 步 3 波連鎖捷徑。",
+    "board": "GHDFDGFWGWLHFWGWLHWDHFDDFGWLHH",
+    "maxSteps": 13,
+    "allowDiagonal": false,
+    "seed": 20110,
+    "timeBudgetMs": 500
+  }
+]

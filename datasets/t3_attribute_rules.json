@@ -1,0 +1,250 @@
+[
+  {
+    "id": "T3-01",
+    "tier": "T3",
+    "description": "任意波次達成五屬同消。",
+    "board": "FFHGLHGGFGGWWHDLWLGLWLDDWWHDHD",
+    "maxSteps": 22,
+    "allowDiagonal": false,
+    "seed": 30101,
+    "timeBudgetMs": 1000,
+    "requiredColors": [
+      "Water",
+      "Fire",
+      "Wood",
+      "Light",
+      "Dark"
+    ]
+  },
+  {
+    "id": "T3-02",
+    "tier": "T3",
+    "description": "第一波（首消）嚴格要求五屬同消。",
+    "board": "GWGLLWGFLWWDFLFWDWFDLFLDLFGFLD",
+    "maxSteps": 24,
+    "allowDiagonal": false,
+    "seed": 30102,
+    "timeBudgetMs": 1000,
+    "requiredColors": [
+      "Water",
+      "Fire",
+      "Wood",
+      "Light",
+      "Dark"
+    ],
+    "requiredColorsFirstWaveOnly": true,
+    "colorWeights": {
+      "Water": 1.5,
+      "Fire": 1.5,
+      "Wood": 1.5,
+      "Light": 1.5,
+      "Dark": 1.5,
+      "Heart": 0.5
+    }
+  },
+  {
+    "id": "T3-03",
+    "tier": "T3",
+    "description": "火／光／暗第一波首消，搭配高權重偏斜。",
+    "board": "FWLDDGDDWFHFLHFFDLWLDLLFWGDLLF",
+    "maxSteps": 20,
+    "allowDiagonal": false,
+    "seed": 30103,
+    "timeBudgetMs": 1000,
+    "requiredColors": [
+      "Fire",
+      "Light",
+      "Dark"
+    ],
+    "requiredColorsFirstWaveOnly": true,
+    "colorWeights": {
+      "Water": 0.5,
+      "Fire": 2.5,
+      "Wood": 0.5,
+      "Light": 2,
+      "Dark": 2,
+      "Heart": 0.5
+    }
+  },
+  {
+    "id": "T3-04",
+    "tier": "T3",
+    "description": "水／木／心第一波首消，且心珠權重優先。",
+    "board": "LWHHDWWFDLGGWLGHGDHGGDDWWHFGLL",
+    "maxSteps": 23,
+    "allowDiagonal": false,
+    "seed": 30104,
+    "timeBudgetMs": 1000,
+    "requiredColors": [
+      "Water",
+      "Wood",
+      "Heart"
+    ],
+    "requiredColorsFirstWaveOnly": true,
+    "colorWeights": {
+      "Water": 2,
+      "Fire": 0.5,
+      "Wood": 2,
+      "Light": 0.5,
+      "Dark": 0.5,
+      "Heart": 3
+    }
+  },
+  {
+    "id": "T3-05",
+    "tier": "T3",
+    "description": "水屬全體攻擊盾（≥ 5 顆相連）。",
+    "board": "WWFDWWGFWHFDWHDLLWHHDWGGLLGFFH",
+    "maxSteps": 21,
+    "allowDiagonal": false,
+    "seed": 30105,
+    "timeBudgetMs": 1000,
+    "requiredColors": [
+      "Water"
+    ],
+    "requireAoeColors": [
+      "Water"
+    ],
+    "colorWeights": {
+      "Water": 2.5,
+      "Fire": 1,
+      "Wood": 1,
+      "Light": 1,
+      "Dark": 1,
+      "Heart": 0.5
+    }
+  },
+  {
+    "id": "T3-06",
+    "tier": "T3",
+    "description": "火屬全體攻擊 + 火／木第一波首消。",
+    "board": "GFDDHWLFFLWGFDFWFFGWDWLFDGDDHD",
+    "maxSteps": 22,
+    "allowDiagonal": false,
+    "seed": 30106,
+    "timeBudgetMs": 1000,
+    "requiredColors": [
+      "Fire",
+      "Wood"
+    ],
+    "requiredColorsFirstWaveOnly": true,
+    "requireAoeColors": [
+      "Fire"
+    ],
+    "colorWeights": {
+      "Water": 1,
+      "Fire": 2.5,
+      "Wood": 1.5,
+      "Light": 1,
+      "Dark": 1,
+      "Heart": 0.5
+    }
+  },
+  {
+    "id": "T3-07",
+    "tier": "T3",
+    "description": "雙全體攻擊盾（光與暗各 ≥ 5 顆相連）。",
+    "board": "LWWHWHDFLDWWLDLDHDWLDWDHGLLWDD",
+    "maxSteps": 25,
+    "allowDiagonal": false,
+    "seed": 30107,
+    "timeBudgetMs": 1000,
+    "requiredColors": [
+      "Light",
+      "Dark"
+    ],
+    "requireAoeColors": [
+      "Light",
+      "Dark"
+    ],
+    "colorWeights": {
+      "Water": 0.5,
+      "Fire": 0.5,
+      "Wood": 0.5,
+      "Light": 2.5,
+      "Dark": 2.5,
+      "Heart": 0.5
+    }
+  },
+  {
+    "id": "T3-08",
+    "tier": "T3",
+    "description": "指定 4 色消除 + 木屬全體攻擊盾。",
+    "board": "WHGWLFGDWGWHGHFFHHLGGFFLDFDWDW",
+    "maxSteps": 24,
+    "allowDiagonal": false,
+    "seed": 30108,
+    "timeBudgetMs": 1000,
+    "requiredColors": [
+      "Water",
+      "Fire",
+      "Wood",
+      "Heart"
+    ],
+    "requireAoeColors": [
+      "Wood"
+    ],
+    "colorWeights": {
+      "Water": 1.5,
+      "Fire": 1.5,
+      "Wood": 2.5,
+      "Light": 0.5,
+      "Dark": 0.5,
+      "Heart": 1.5
+    }
+  },
+  {
+    "id": "T3-09",
+    "tier": "T3",
+    "description": "跨波次達成全 6 色消除。",
+    "board": "HLDWDDHGWLWHDLLGLLHDFFGGHWLDFH",
+    "maxSteps": 25,
+    "allowDiagonal": false,
+    "seed": 30109,
+    "timeBudgetMs": 1000,
+    "requiredColors": [
+      "Water",
+      "Fire",
+      "Wood",
+      "Light",
+      "Dark",
+      "Heart"
+    ],
+    "colorWeights": {
+      "Water": 1.5,
+      "Fire": 1.5,
+      "Wood": 1.5,
+      "Light": 1.5,
+      "Dark": 1.5,
+      "Heart": 1.5
+    }
+  },
+  {
+    "id": "T3-10",
+    "tier": "T3",
+    "description": "4 色第一波首消 + 暗屬全體攻擊 + 暗屬極高權重偏斜。",
+    "board": "WWDLHDWHWDFFDLDFDWLDDFGWLGLLFH",
+    "maxSteps": 25,
+    "allowDiagonal": false,
+    "seed": 30110,
+    "timeBudgetMs": 1000,
+    "requiredColors": [
+      "Water",
+      "Fire",
+      "Light",
+      "Dark"
+    ],
+    "requiredColorsFirstWaveOnly": true,
+    "requireAoeColors": [
+      "Dark"
+    ],
+    "colorWeights": {
+      "Water": 1.5,
+      "Fire": 1.5,
+      "Wood": 0.2,
+      "Light": 1.5,
+      "Dark": 3,
+      "Heart": 0.2
+    }
+  }
+]
