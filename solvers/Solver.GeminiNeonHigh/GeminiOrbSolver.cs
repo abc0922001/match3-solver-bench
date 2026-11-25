@@ -13,17 +13,18 @@ public sealed class GeminiOrbSolver : IOrbSolver
     private const int Cols = 6;
     private const int CellCount = 30;
     private const int MaxBeamWidth = 1024;
+    private const int CandCapacity = MaxBeamWidth * 7; // 7168 (max non-reverse children per depth)
     private const int MaxSupportedSteps = 250;
-    private const int HistoryCapacity = 98304; // 384 KiB
-    private const int VisitedSize = 32768;     // 256 KiB (2-way set associative)
+    private const int HistoryCapacity = 81920; // 320 KiB
+    private const int VisitedSize = 32768;     // 256 KiB (2-way set associative, epoch-tagged)
     private const int VisitedBucketMask = VisitedSize - 2;
 
     private const uint BoardMask = 0x3FFFFFFFu;
     private const uint Col0Mask = 0x01041041u;
     private const uint Col5Mask = 0x20820820u;
-    private const uint NotCol0Mask = BoardMask & ~Col0Mask;                   // 0x3EFBEFBE
-    private const uint NotCol5Mask = BoardMask & ~Col5Mask;                   // 0x1F7DF7DF
-    private const uint NotCol0Col5Mask = BoardMask & ~(Col0Mask | Col5Mask);  // 0x1E79E79E
+    private const uint NotCol0Mask = BoardMask & ~Col0Mask;                       // 0x3EFBEFBE
+    private const uint NotCol5Mask = BoardMask & ~Col5Mask;                       // 0x1F7DF7DF
+    private const uint NotCol0Col5Mask = BoardMask & ~(Col0Mask | Col5Mask);      // 0x1E79E79E
     private const uint NotCol4Col5Mask = BoardMask & ~((Col0Mask << 4) | Col5Mask); // 0x0F3CF3CF
 
     private static readonly byte[] ReverseDir = [1, 0, 3, 2, 7, 6, 5, 4];
@@ -51,18 +52,23 @@ public sealed class GeminiOrbSolver : IOrbSolver
         }
     }
 
-    // Pre-allocated per-instance reusable buffers (< 750 KiB total; reset on every Solve call)
-    private readonly BeamState[] _beamA = new BeamState[MaxBeamWidth];
-    private readonly BeamState[] _beamB = new BeamState[MaxBeamWidth];
-    private readonly uint[] _history = new uint[HistoryCapacity];
-    private readonly ulong[] _visited = new ulong[VisitedSize];
+    // Pre-allocated per-instance reusable buffers (~908 KiB total; 0 B hot-loop allocations)
+    private readonly BeamState[] _beamA = new BeamState[MaxBeamWidth];      // 32 KiB
+    private readonly BeamState[] _beamB = new BeamState[MaxBeamWidth];      // 32 KiB
+    private readonly BeamState[] _candBuf = new BeamState[CandCapacity];    // 224 KiB
+    private readonly uint[] _candKey = new uint[CandCapacity];              // 28 KiB
+    private readonly ushort[] _tieIdxA = new ushort[CandCapacity];          // 14 KiB
+    private readonly ushort[] _tieIdxB = new ushort[CandCapacity];          // 14 KiB
+    private readonly uint[] _history = new uint[HistoryCapacity];           // 320 KiB
+    private readonly ulong[] _visited = new ulong[VisitedSize];             // 256 KiB
     private readonly float[] _weights = new float[7];
     private readonly byte[] _neighborCount = new byte[CellCount];
     private readonly byte[] _neighborIdx = new byte[CellCount * 8];
     private readonly byte[] _neighborDir = new byte[CellCount * 8];
     private readonly Direction[] _bestMovesBuf = new Direction[MaxSupportedSteps];
 
-    // Per-Solve mutable state (always overwritten before use)
+    // Per-Solve mutable state (strictly invalidated/overwritten on every Solve call)
+    private uint _visitedGen;
     private CellCoord _bestStart;
     private int _bestMovesLen;
     private double _bestEffectiveScore;
@@ -71,8 +77,8 @@ public sealed class GeminiOrbSolver : IOrbSolver
     private int _historyCount;
     private long _evalCounter;
 
-    public string Name => "Solver.GeminiNeonHigh";
-    public string ModelTag => "gemini-neon-high";
+    public string Name => "Gemini Bitplane Radix-Beam Solver";
+    public string ModelTag => "Gemini";
     public ExecutionMode Mode => ExecutionMode.SingleThread;
 
     public GeminiOrbSolver()
@@ -105,9 +111,9 @@ public sealed class GeminiOrbSolver : IOrbSolver
             _weights[c] = c < wSpan.Length ? wSpan[c] : 1.0f;
         }
 
-        // 2. Parse initial board into 6 bitboards
+        // 2. Parse initial board into 3 bitplanes (P0, P1, P2)
         ReadOnlySpan<OrbType> cells = board.Cells;
-        Board6 initialBoard = default;
+        Board3 initialBoard = default;
         Span<int> initCounts = stackalloc int[7];
         uint obstacleMask = board.ObstacleMask & BoardMask;
         int firstValidCell = -1;
@@ -116,9 +122,11 @@ public sealed class GeminiOrbSolver : IOrbSolver
         {
             int color = (int)cells[idx];
             uint bit = 1u << idx;
-            if (color >= 1 && color <= 6)
+            if ((uint)(color - 1) < 6u)
             {
-                initialBoard.OrColor(color, bit);
+                if ((color & 1) != 0) initialBoard.P0 |= bit;
+                if ((color & 2) != 0) initialBoard.P1 |= bit;
+                if ((color & 4) != 0) initialBoard.P2 |= bit;
                 initCounts[color]++;
             }
 
@@ -133,7 +141,7 @@ public sealed class GeminiOrbSolver : IOrbSolver
             return new SolveResult(new CellCoord(0, 0), Array.Empty<Direction>());
         }
 
-        // 3. Precompute valid neighbor table (respects bounds, AllowDiagonal, ObstacleMask)
+        // 3. Precompute valid neighbor table (bounds, AllowDiagonal, ObstacleMask)
         int maxDir = options.AllowDiagonal ? 8 : 4;
         for (int idx = 0; idx < CellCount; idx++)
         {
@@ -177,7 +185,9 @@ public sealed class GeminiOrbSolver : IOrbSolver
         _bestAllShieldsMet = false;
         _evalCounter = 0;
 
-        EvalResult zeroEval = EvaluateBoard(in initialBoard, 0, in ctx, SearchProfile.Balanced, 0);
+        EvalResult zeroEval = ctx.HasShields
+            ? EvaluateWithShields(in initialBoard, 0, in ctx, SearchProfile.Balanced, 0)
+            : EvaluateNoShields(in initialBoard, 0, SearchProfile.Balanced);
         UpdateGlobalBest(in zeroEval, (byte)firstValidCell, 0, 0, 0);
 
         int maxSteps = Math.Min(options.MaxSteps, MaxSupportedSteps);
@@ -186,31 +196,24 @@ public sealed class GeminiOrbSolver : IOrbSolver
             return BuildResult();
         }
 
-        // Compute theoretical upper bound for early stopping
         double upperV = ComputeUpperBound(initCounts, in ctx);
 
         // Deterministic RNG strictly initialized from options.Seed
         ulong rngState = (ulong)(uint)options.Seed ^ 0xD1B54A32D192ED03UL;
         if (rngState == 0) rngState = 0x9E3779B97F4A7C15UL;
 
-        // 6. Adaptive Multi-Pass Beam Search
+        // 6. Adaptive Multi-Pass O(D * W) Radix-Beam Search
         int branching = options.AllowDiagonal ? 7 : 3;
         int effSteps = Math.Clamp(maxSteps, 1, 60);
 
-        // Pass 1: Balanced Beam Search aimed to complete comfortably inside sweetSpotMs
+        // Pass 1: Balanced Beam Search sized for sweetSpotMs (keeps S_speed = 100)
         double pass1TargetMs = Math.Max(0.8, sweetSpotMs * 0.78);
-        int estimatedNodes = (int)(pass1TargetMs * 1800.0); // conservative ~1.8M nodes/sec
-        int w1 = Math.Clamp(estimatedNodes / Math.Max(1, branching * effSteps), 48, 512);
+        int estimatedNodes = (int)(pass1TargetMs * 2400.0);
+        int w1 = Math.Clamp(estimatedNodes / Math.Max(1, branching * effSteps), 64, 576);
         w1 = Math.Min(w1, (HistoryCapacity - 64) / Math.Max(1, maxSteps));
         w1 = Math.Max(16, w1);
 
-        long pass1Deadline = ctx.HasShields && ctx.ShieldsPossible ? hardDeadlineTicks : sweetDeadlineTicks;
-        // For Pass 1, cap strictly at sweetSpot if we have enough time for Pass 2, else hardDeadline
-        long p1Cap = Math.Min(pass1Deadline, sweetDeadlineTicks);
-        if (budgetMs < 25)
-        {
-            p1Cap = hardDeadlineTicks;
-        }
+        long p1Cap = budgetMs < 25 ? hardDeadlineTicks : sweetDeadlineTicks;
 
         RunBeamPass(
             in initialBoard,
@@ -224,10 +227,9 @@ public sealed class GeminiOrbSolver : IOrbSolver
             p1Cap,
             cancellationToken);
 
-        // Check if we already achieved near-theoretical optimal with all shields satisfied
         bool nearOptimal = _bestAllShieldsMet && (upperV - _bestTrueV < 85.0);
 
-        // Pass 2A: Emergency Shield Recovery (if shields are possible yet unmet, unlock up to hardDeadlineTicks!)
+        // Pass 2A: Emergency Shield Recovery (unlocks up to hardDeadlineTicks to avoid 25-pt cap)
         if (ctx.HasShields && ctx.ShieldsPossible && !_bestAllShieldsMet &&
             !cancellationToken.IsCancellationRequested && Stopwatch.GetTimestamp() < hardDeadlineTicks)
         {
@@ -246,7 +248,7 @@ public sealed class GeminiOrbSolver : IOrbSolver
                 hardDeadlineTicks,
                 cancellationToken);
 
-            // Pass 2B: If PuzzleMask with open color is still unsolved, target each feasible puzzle color explicitly
+            // Pass 2B: Targeted puzzle color search if PuzzleColor is open and still unmet
             if (!_bestAllShieldsMet && ctx.PuzzleMask != 0 && ctx.PuzzleColor == 0 &&
                 !cancellationToken.IsCancellationRequested && Stopwatch.GetTimestamp() < hardDeadlineTicks)
             {
@@ -268,17 +270,20 @@ public sealed class GeminiOrbSolver : IOrbSolver
                     }
                 }
 
-                // Sort candidates descending by initial affinity
-                for (int i = 0; i < candCount - 1; i++)
+                // Insertion sort on <= 6 elements (O(1) bounded)
+                for (int i = 1; i < candCount; i++)
                 {
-                    for (int j = i + 1; j < candCount; j++)
+                    int keyScore = candScores[i];
+                    int keyColor = candColors[i];
+                    int j = i - 1;
+                    while (j >= 0 && candScores[j] < keyScore)
                     {
-                        if (candScores[j] > candScores[i])
-                        {
-                            (candScores[i], candScores[j]) = (candScores[j], candScores[i]);
-                            (candColors[i], candColors[j]) = (candColors[j], candColors[i]);
-                        }
+                        candScores[j + 1] = candScores[j];
+                        candColors[j + 1] = candColors[j];
+                        j--;
                     }
+                    candScores[j + 1] = keyScore;
+                    candColors[j + 1] = keyColor;
                 }
 
                 int wFocused = Math.Clamp(wShield * 2 / 3, 64, 640);
@@ -301,7 +306,7 @@ public sealed class GeminiOrbSolver : IOrbSolver
                 }
             }
 
-            // Pass 2C: Perturbed Shield-First fallback if still unmet and time remains
+            // Pass 2C: Perturbed Shield-First fallback if still unmet
             int retry = 0;
             while (!_bestAllShieldsMet && retry < 3 &&
                    !cancellationToken.IsCancellationRequested && Stopwatch.GetTimestamp() < hardDeadlineTicks)
@@ -326,11 +331,11 @@ public sealed class GeminiOrbSolver : IOrbSolver
             long now = Stopwatch.GetTimestamp();
             double remainingSweetMs = (sweetDeadlineTicks - now) / ticksPerMs;
 
-            // Pass 2: Free polish inside sweetSpotMs (keeps S_speed = 100!) using CascadeExplorer profile
-            if (remainingSweetMs > 1.0)
+            // Pass 2: Free polish inside sweetSpotMs using CascadeExplorer profile
+            if (remainingSweetMs > 0.8)
             {
-                int estNodes2 = (int)(remainingSweetMs * 1700.0);
-                int w2 = Math.Clamp(estNodes2 / Math.Max(1, branching * effSteps), 48, 768);
+                int estNodes2 = (int)(remainingSweetMs * 2200.0);
+                int w2 = Math.Clamp(estNodes2 / Math.Max(1, branching * effSteps), 64, 896);
                 w2 = Math.Min(w2, (HistoryCapacity - 64) / Math.Max(1, maxSteps));
                 w2 = Math.Max(24, w2);
 
@@ -349,7 +354,7 @@ public sealed class GeminiOrbSolver : IOrbSolver
                 nearOptimal = _bestAllShieldsMet && (upperV - _bestTrueV < 85.0);
             }
 
-            // Pass 3: If still noticeably below theoretical bound (>= ~1.7 combos gap), spend up to polishStopMs
+            // Pass 3: Wide polish if noticeably below theoretical bound
             if (!nearOptimal && _bestAllShieldsMet &&
                 upperV > 0 && _bestTrueV < upperV * 0.85 && (upperV - _bestTrueV) >= 165.0 &&
                 !cancellationToken.IsCancellationRequested && Stopwatch.GetTimestamp() < polishDeadlineTicks)
@@ -377,7 +382,7 @@ public sealed class GeminiOrbSolver : IOrbSolver
     private SolveContext BuildContext(
         in BoardSnapshot board,
         in SolveOptions options,
-        in Board6 initialBoard,
+        in Board3 initialBoard,
         ReadOnlySpan<int> initCounts,
         uint obstacleMask)
     {
@@ -391,10 +396,10 @@ public sealed class GeminiOrbSolver : IOrbSolver
         uint puzzleBoundary = 0;
         uint puzzleRing1 = 0;
         uint puzzleRing2 = 0;
+        uint puzzleRing3 = 0;
         byte feasiblePuzzleColors = 0;
         bool shieldsPossible = true;
 
-        // Check RequiredColorsMask feasibility
         for (int c = 1; c <= 6; c++)
         {
             if ((reqColorsMask & (1 << c)) != 0 && initCounts[c] < 3)
@@ -417,23 +422,21 @@ public sealed class GeminiOrbSolver : IOrbSolver
             {
                 puzzleBoundary = Expand4(puzzleMask) & ~puzzleMask & BoardMask;
                 puzzleRing1 = ExpandMoves(puzzleMask, options.AllowDiagonal) & ~puzzleMask & ~obstacleMask;
-                puzzleRing2 = ExpandMoves(puzzleRing1, options.AllowDiagonal) & ~(puzzleMask | puzzleRing1) & ~obstacleMask;
+                uint seen = puzzleMask | puzzleRing1;
+                puzzleRing2 = ExpandMoves(puzzleRing1, options.AllowDiagonal) & ~seen & ~obstacleMask;
+                seen |= puzzleRing2;
+                puzzleRing3 = ExpandMoves(puzzleRing2, options.AllowDiagonal) & ~seen & ~obstacleMask;
 
-                // Check if obstacle cells inside PuzzleMask lock its color
                 uint lockedInside = puzzleMask & obstacleMask;
                 int lockedColor = 0;
                 bool lockedConflict = false;
-                if (lockedInside != 0)
+                while (lockedInside != 0)
                 {
-                    uint tmp = lockedInside;
-                    while (tmp != 0)
-                    {
-                        uint bit = tmp & (0u - tmp);
-                        tmp ^= bit;
-                        int col = initialBoard.GetColorAt(bit);
-                        if (lockedColor == 0) lockedColor = col;
-                        else if (lockedColor != col) lockedConflict = true;
-                    }
+                    int idx = BitOperations.TrailingZeroCount(lockedInside);
+                    lockedInside &= lockedInside - 1;
+                    int col = initialBoard.GetColorAt(idx);
+                    if (lockedColor == 0) lockedColor = col;
+                    else if (lockedColor != col) lockedConflict = true;
                 }
 
                 if (lockedConflict)
@@ -466,6 +469,7 @@ public sealed class GeminiOrbSolver : IOrbSolver
             puzzleBoundary,
             puzzleRing1,
             puzzleRing2,
+            puzzleRing3,
             puzzleColor,
             puzzlePop,
             feasiblePuzzleColors,
@@ -509,8 +513,9 @@ public sealed class GeminiOrbSolver : IOrbSolver
         return upper;
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
     private void RunBeamPass(
-        in Board6 initialBoard,
+        in Board3 initialBoard,
         in SolveContext ctx,
         int maxSteps,
         int beamWidth,
@@ -521,31 +526,34 @@ public sealed class GeminiOrbSolver : IOrbSolver
         long deadlineTicks,
         CancellationToken cancellationToken)
     {
-        Array.Clear(_visited, 0, VisitedSize);
-        _historyCount = 1; // index 0 is reserved sentinel for depth 0
+        ResetVisited(); // Amortized O(1) via 16-bit epoch tag
+        _historyCount = 1;
         _history[0] = 0;
 
+        bool useFastEval = !ctx.HasShields;
         ulong baseBoardHash = ComputeBoardHash(in initialBoard);
-        EvalResult rootEval = EvaluateBoard(in initialBoard, 0, in ctx, profile, forcedPuzzleColor);
+        EvalResult rootEval = useFastEval
+            ? EvaluateNoShields(in initialBoard, 0, profile)
+            : EvaluateWithShields(in initialBoard, 0, in ctx, profile, forcedPuzzleColor);
 
         BeamState[] currBeam = _beamA;
         BeamState[] nextBeam = _beamB;
+        BeamState[] candBuf = _candBuf;
+        uint[] candKey = _candKey;
         int currCount = 0;
 
-        // Seed depth 0 with all valid non-obstacle start cells that have at least 1 move
         for (int pos = 0; pos < CellCount; pos++)
         {
             if (_neighborCount[pos] == 0) continue;
 
-            byte heldColor = (byte)initialBoard.GetColorAt(1u << pos);
+            byte heldColor = (byte)initialBoard.GetColorAt(pos);
             ulong h = baseBoardHash ^ ZobristCursor[pos];
             TryMarkVisited(h);
 
             currBeam[currCount++] = new BeamState
             {
-                Board = initialBoard,
                 Hash = h,
-                Heuristic = rootEval.Heuristic,
+                Board = initialBoard,
                 BaseScore = rootEval.Heuristic,
                 HistoryIdx = 0,
                 Pos = (byte)pos,
@@ -562,11 +570,11 @@ public sealed class GeminiOrbSolver : IOrbSolver
 
         for (int depth = 1; depth <= maxSteps; depth++)
         {
-            int nextCount = 0;
             int remainingHistory = HistoryCapacity - _historyCount;
             if (remainingHistory <= 0) break;
 
             int effectiveWidth = Math.Min(beamWidth, remainingHistory);
+            int candCount = 0;
 
             for (int bIdx = 0; bIdx < currCount; bIdx++)
             {
@@ -584,6 +592,7 @@ public sealed class GeminiOrbSolver : IOrbSolver
                 byte prevDir = parent.PrevDir;
                 byte forbiddenDir = prevDir < 8 ? ReverseDir[prevDir] : (byte)255;
                 uint posBit = 1u << pos;
+                int heldBase = heldColor * CellCount;
 
                 int nCount = _neighborCount[pos];
                 int nBase = pos * 8;
@@ -594,93 +603,80 @@ public sealed class GeminiOrbSolver : IOrbSolver
                     if (dir == forbiddenDir) continue;
 
                     byte nextPos = _neighborIdx[nBase + ni];
-                    uint nextBit = 1u << nextPos;
-                    int targetColor = parent.Board.GetColorAt(nextBit);
-
-                    ulong childHash;
-                    Board6 childBoard = parent.Board;
+                    int targetColor = parent.Board.GetColorAt(nextPos);
 
                     if (targetColor == heldColor)
                     {
-                        childHash = parent.Hash ^ ZobristCursor[pos] ^ ZobristCursor[nextPos];
+                        ulong childHash = parent.Hash ^ ZobristCursor[pos] ^ ZobristCursor[nextPos];
                         if (!TryMarkVisited(childHash)) continue;
 
                         _evalCounter++;
-                        float baseH = parent.BaseScore - 0.5f;
-                        float h = baseH;
-                        if (noiseScale > 0f)
-                        {
-                            h += NextJitter(ref rngState, noiseScale);
-                        }
+                        if (candCount >= CandCapacity) continue;
 
-                        if (nextCount < effectiveWidth || h > nextBeam[0].Heuristic)
+                        float baseH = parent.BaseScore - 0.5f;
+                        float h = noiseScale > 0f ? baseH + NextJitter(ref rngState, noiseScale) : baseH;
+
+                        candKey[candCount] = FloatToSortableUint(h);
+                        candBuf[candCount++] = new BeamState
                         {
-                            var child = new BeamState
-                            {
-                                Board = childBoard,
-                                Hash = childHash,
-                                Heuristic = h,
-                                BaseScore = baseH,
-                                HistoryIdx = parent.HistoryIdx,
-                                Pos = nextPos,
-                                HeldColor = (byte)heldColor,
-                                PrevDir = dir,
-                                StartPos = parent.StartPos
-                            };
-                            PushMinHeap(nextBeam, ref nextCount, effectiveWidth, in child);
-                        }
+                            Hash = childHash,
+                            Board = parent.Board,
+                            BaseScore = baseH,
+                            HistoryIdx = parent.HistoryIdx,
+                            Pos = nextPos,
+                            HeldColor = (byte)heldColor,
+                            PrevDir = dir,
+                            StartPos = parent.StartPos
+                        };
                     }
                     else
                     {
-                        uint swapMask = posBit | nextBit;
-                        childBoard.XorColor(heldColor, swapMask);
-                        childBoard.XorColor(targetColor, swapMask);
-
-                        int heldBase = heldColor * CellCount;
                         int targetBase = targetColor * CellCount;
-                        childHash = parent.Hash
+                        ulong childHash = parent.Hash
                             ^ ZobristOrb[heldBase + pos] ^ ZobristOrb[heldBase + nextPos]
                             ^ ZobristOrb[targetBase + nextPos] ^ ZobristOrb[targetBase + pos]
                             ^ ZobristCursor[pos] ^ ZobristCursor[nextPos];
 
                         if (!TryMarkVisited(childHash)) continue;
 
+                        Board3 childBoard = parent.Board;
+                        childBoard.SwapColors(heldColor, targetColor, posBit | (1u << nextPos));
+
                         _evalCounter++;
-                        EvalResult eval = EvaluateBoard(in childBoard, depth, in ctx, profile, forcedPuzzleColor);
+                        EvalResult eval = useFastEval
+                            ? EvaluateNoShields(in childBoard, depth, profile)
+                            : EvaluateWithShields(in childBoard, depth, in ctx, profile, forcedPuzzleColor);
 
                         if (IsBetterThanBest(in eval, depth))
                         {
                             UpdateGlobalBest(in eval, parent.StartPos, parent.HistoryIdx, dir, depth);
                         }
 
-                        float baseH = eval.Heuristic;
-                        float h = baseH;
-                        if (noiseScale > 0f)
-                        {
-                            h += NextJitter(ref rngState, noiseScale);
-                        }
+                        if (candCount >= CandCapacity) continue;
 
-                        if (nextCount < effectiveWidth || h > nextBeam[0].Heuristic)
+                        float baseH = eval.Heuristic;
+                        float h = noiseScale > 0f ? baseH + NextJitter(ref rngState, noiseScale) : baseH;
+
+                        candKey[candCount] = FloatToSortableUint(h);
+                        candBuf[candCount++] = new BeamState
                         {
-                            var child = new BeamState
-                            {
-                                Board = childBoard,
-                                Hash = childHash,
-                                Heuristic = h,
-                                BaseScore = baseH,
-                                HistoryIdx = parent.HistoryIdx,
-                                Pos = nextPos,
-                                HeldColor = (byte)heldColor,
-                                PrevDir = dir,
-                                StartPos = parent.StartPos
-                            };
-                            PushMinHeap(nextBeam, ref nextCount, effectiveWidth, in child);
-                        }
+                            Hash = childHash,
+                            Board = childBoard,
+                            BaseScore = baseH,
+                            HistoryIdx = parent.HistoryIdx,
+                            Pos = nextPos,
+                            HeldColor = (byte)heldColor,
+                            PrevDir = dir,
+                            StartPos = parent.StartPos
+                        };
                     }
                 }
             }
 
-            if (nextCount == 0) break;
+            if (candCount == 0) break;
+
+            // Strictly O(N) worst-case exact Top-W selection via MSB Radix Select
+            int nextCount = SelectTopW(nextBeam, candCount, effectiveWidth);
 
             // Commit surviving beam nodes to compact history pool
             for (int i = 0; i < nextCount; i++)
@@ -690,12 +686,9 @@ public sealed class GeminiOrbSolver : IOrbSolver
                 nextBeam[i].HistoryIdx = hIdx;
             }
 
-            // Swap beam buffers
             (currBeam, nextBeam) = (nextBeam, currBeam);
             currCount = nextCount;
 
-            // If we were in emergency shield recovery and just satisfied all shields,
-            // allow a few extra depths to harvest combos, then return promptly to save speed score.
             if (exitOnceShieldFound && _bestAllShieldsMet)
             {
                 extraStepsAfterShield++;
@@ -707,20 +700,210 @@ public sealed class GeminiOrbSolver : IOrbSolver
         }
     }
 
+    // Worst-case O(N) exact Top-W selection over IEEE-754 order-preserving uint keys
     [MethodImpl(MethodImplOptions.AggressiveOptimization)]
-    private EvalResult EvaluateBoard(
-        in Board6 board,
+    private int SelectTopW(BeamState[] dest, int candCount, int effectiveWidth)
+    {
+        if (candCount <= effectiveWidth)
+        {
+            Array.Copy(_candBuf, 0, dest, 0, candCount);
+            return candCount;
+        }
+
+        Span<int> counts = stackalloc int[256];
+        uint[] keys = _candKey;
+        BeamState[] cands = _candBuf;
+
+        // Pass 0: top byte (bits 31..24)
+        for (int i = 0; i < candCount; i++)
+        {
+            counts[(int)(keys[i] >> 24)]++;
+        }
+
+        int acc = 0;
+        int thresh = 0;
+        for (int b = 255; b >= 0; b--)
+        {
+            int c = counts[b];
+            if (acc + c >= effectiveWidth)
+            {
+                thresh = b;
+                break;
+            }
+            acc += c;
+        }
+
+        int outCount = 0;
+        int tieCount = 0;
+        ushort[] tieCurr = _tieIdxA;
+        ushort[] tieNext = _tieIdxB;
+
+        for (int i = 0; i < candCount; i++)
+        {
+            int b = (int)(keys[i] >> 24);
+            if (b > thresh)
+            {
+                dest[outCount++] = cands[i];
+            }
+            else if (b == thresh)
+            {
+                tieCurr[tieCount++] = (ushort)i;
+            }
+        }
+
+        int need = effectiveWidth - outCount;
+
+        // Refinement passes: bits 23..16, 15..8, 7..0 (only on tie bucket)
+        for (int shift = 16; shift >= 0 && need > 0; shift -= 8)
+        {
+            if (tieCount <= need)
+            {
+                for (int j = 0; j < tieCount; j++)
+                {
+                    dest[outCount++] = cands[tieCurr[j]];
+                }
+                return outCount;
+            }
+
+            counts.Clear();
+            for (int j = 0; j < tieCount; j++)
+            {
+                counts[(int)((keys[tieCurr[j]] >> shift) & 0xFFu)]++;
+            }
+
+            acc = 0;
+            thresh = 0;
+            for (int b = 255; b >= 0; b--)
+            {
+                int c = counts[b];
+                if (acc + c >= need)
+                {
+                    thresh = b;
+                    break;
+                }
+                acc += c;
+            }
+
+            int nextTieCount = 0;
+            for (int j = 0; j < tieCount; j++)
+            {
+                ushort idx = tieCurr[j];
+                int b = (int)((keys[idx] >> shift) & 0xFFu);
+                if (b > thresh)
+                {
+                    dest[outCount++] = cands[idx];
+                }
+                else if (b == thresh)
+                {
+                    tieNext[nextTieCount++] = idx;
+                }
+            }
+
+            need = effectiveWidth - outCount;
+            (tieCurr, tieNext) = (tieNext, tieCurr);
+            tieCount = nextTieCount;
+        }
+
+        // Exact key ties remaining after all 32 bits
+        for (int j = 0; j < need && j < tieCount; j++)
+        {
+            dest[outCount++] = cands[tieCurr[j]];
+        }
+
+        return outCount;
+    }
+
+    // Fast path for shield-free boards (T1/T2/T4 without shields): zero shield-tracking overhead
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+    private EvalResult EvaluateNoShields(in Board3 board, int steps, SearchProfile profile)
+    {
+        uint p0 = board.P0;
+        uint p1 = board.P1;
+        uint p2 = board.P2;
+
+        int combos = 0;
+        double weightedElim = 0.0;
+        int waves = 0;
+        float[] weights = _weights;
+
+        uint b1, b2, b3, b4, b5, b6;
+        while (true)
+        {
+            uint n0 = ~p0, n1 = ~p1, n2 = ~p2;
+            uint p0n2 = p0 & n2;
+            uint n1p2 = n1 & p2;
+            uint p1p2 = p1 & p2;
+            b1 = p0n2 & n1;
+            b2 = (n0 & p1) & n2;
+            b3 = p0n2 & p1;
+            b4 = n0 & n1p2;
+            b5 = p0 & n1p2;
+            b6 = n0 & p1p2;
+
+            uint m1 = FindMatches(b1);
+            uint m2 = FindMatches(b2);
+            uint m3 = FindMatches(b3);
+            uint m4 = FindMatches(b4);
+            uint m5 = FindMatches(b5);
+            uint m6 = FindMatches(b6);
+
+            uint cleared = m1 | m2 | m3 | m4 | m5 | m6;
+            if (cleared == 0) break;
+
+            waves++;
+
+            if (m1 != 0) ProcessColorMatchesFast(m1, weights[1], ref combos, ref weightedElim);
+            if (m2 != 0) ProcessColorMatchesFast(m2, weights[2], ref combos, ref weightedElim);
+            if (m3 != 0) ProcessColorMatchesFast(m3, weights[3], ref combos, ref weightedElim);
+            if (m4 != 0) ProcessColorMatchesFast(m4, weights[4], ref combos, ref weightedElim);
+            if (m5 != 0) ProcessColorMatchesFast(m5, weights[5], ref combos, ref weightedElim);
+            if (m6 != 0) ProcessColorMatchesFast(m6, weights[6], ref combos, ref weightedElim);
+
+            // 3-Bitplane deterministic zero-skyfall gravity (halves shift ops vs 6 color planes)
+            uint keep = ~cleared;
+            p0 &= keep;
+            p1 &= keep;
+            p2 &= keep;
+            uint occ = p0 | p1 | p2;
+
+            for (int p = 0; p < 4; p++)
+            {
+                uint canFall = occ & ((~occ >> 6) & 0x00FFFFFFu);
+                if (canFall == 0) break;
+
+                uint f0 = p0 & canFall; p0 = (p0 ^ f0) | (f0 << 6);
+                uint f1 = p1 & canFall; p1 = (p1 ^ f1) | (f1 << 6);
+                uint f2 = p2 & canFall; p2 = (p2 ^ f2) | (f2 << 6);
+                occ = (occ ^ canFall) | (canFall << 6);
+            }
+        }
+
+        double trueV = combos * 100.0 + weightedElim * 10.0 - steps * 0.5;
+        float potential = ComputeRemainingPotential(b1, weights[1])
+                        + ComputeRemainingPotential(b2, weights[2])
+                        + ComputeRemainingPotential(b3, weights[3])
+                        + ComputeRemainingPotential(b4, weights[4])
+                        + ComputeRemainingPotential(b5, weights[5])
+                        + ComputeRemainingPotential(b6, weights[6]);
+
+        float heuristic = profile == SearchProfile.CascadeExplorer
+            ? (float)trueV + potential * 1.75f + (waves > 1 ? (waves - 1) * 22.0f : 0f)
+            : (float)trueV + potential;
+
+        return new EvalResult(trueV, trueV, heuristic, allShieldsMet: true);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+    private EvalResult EvaluateWithShields(
+        in Board3 board,
         int steps,
         in SolveContext ctx,
         SearchProfile profile,
         int forcedPuzzleColor)
     {
-        uint b1 = board.B1;
-        uint b2 = board.B2;
-        uint b3 = board.B3;
-        uint b4 = board.B4;
-        uint b5 = board.B5;
-        uint b6 = board.B6;
+        uint p0 = board.P0;
+        uint p1 = board.P1;
+        uint p2 = board.P2;
 
         int combos = 0;
         double weightedElim = 0.0;
@@ -737,8 +920,20 @@ public sealed class GeminiOrbSolver : IOrbSolver
         int puzzleColor = ctx.PuzzleColor;
         float[] weights = _weights;
 
+        uint b1, b2, b3, b4, b5, b6;
         for (int wave = 0; ; wave++)
         {
+            uint n0 = ~p0, n1 = ~p1, n2 = ~p2;
+            uint p0n2 = p0 & n2;
+            uint n1p2 = n1 & p2;
+            uint p1p2 = p1 & p2;
+            b1 = p0n2 & n1;
+            b2 = (n0 & p1) & n2;
+            b3 = p0n2 & p1;
+            b4 = n0 & n1p2;
+            b5 = p0 & n1p2;
+            b6 = n0 & p1p2;
+
             uint m1 = FindMatches(b1);
             uint m2 = FindMatches(b2);
             uint m3 = FindMatches(b3);
@@ -761,58 +956,52 @@ public sealed class GeminiOrbSolver : IOrbSolver
                 ProcessColorMatches(m1, 1, wave, puzzleMask, puzzleColor, weights[1],
                     ref combos, ref weightedElim, ref firstWaveElimMask, ref totalElimMask,
                     ref aoeMask, ref puzzleSatisfied, ref maxSz1);
-                b1 ^= m1;
             }
             if (m2 != 0)
             {
                 ProcessColorMatches(m2, 2, wave, puzzleMask, puzzleColor, weights[2],
                     ref combos, ref weightedElim, ref firstWaveElimMask, ref totalElimMask,
                     ref aoeMask, ref puzzleSatisfied, ref maxSz2);
-                b2 ^= m2;
             }
             if (m3 != 0)
             {
                 ProcessColorMatches(m3, 3, wave, puzzleMask, puzzleColor, weights[3],
                     ref combos, ref weightedElim, ref firstWaveElimMask, ref totalElimMask,
                     ref aoeMask, ref puzzleSatisfied, ref maxSz3);
-                b3 ^= m3;
             }
             if (m4 != 0)
             {
                 ProcessColorMatches(m4, 4, wave, puzzleMask, puzzleColor, weights[4],
                     ref combos, ref weightedElim, ref firstWaveElimMask, ref totalElimMask,
                     ref aoeMask, ref puzzleSatisfied, ref maxSz4);
-                b4 ^= m4;
             }
             if (m5 != 0)
             {
                 ProcessColorMatches(m5, 5, wave, puzzleMask, puzzleColor, weights[5],
                     ref combos, ref weightedElim, ref firstWaveElimMask, ref totalElimMask,
                     ref aoeMask, ref puzzleSatisfied, ref maxSz5);
-                b5 ^= m5;
             }
             if (m6 != 0)
             {
                 ProcessColorMatches(m6, 6, wave, puzzleMask, puzzleColor, weights[6],
                     ref combos, ref weightedElim, ref firstWaveElimMask, ref totalElimMask,
                     ref aoeMask, ref puzzleSatisfied, ref maxSz6);
-                b6 ^= m6;
             }
 
-            // Deterministic zero-skyfall gravity (converges in <= 4 passes on 5 rows)
-            uint occ = b1 | b2 | b3 | b4 | b5 | b6;
+            uint keep = ~cleared;
+            p0 &= keep;
+            p1 &= keep;
+            p2 &= keep;
+            uint occ = p0 | p1 | p2;
+
             for (int p = 0; p < 4; p++)
             {
                 uint canFall = occ & ((~occ >> 6) & 0x00FFFFFFu);
                 if (canFall == 0) break;
 
-                uint f;
-                f = b1 & canFall; b1 = (b1 ^ f) | (f << 6);
-                f = b2 & canFall; b2 = (b2 ^ f) | (f << 6);
-                f = b3 & canFall; b3 = (b3 ^ f) | (f << 6);
-                f = b4 & canFall; b4 = (b4 ^ f) | (f << 6);
-                f = b5 & canFall; b5 = (b5 ^ f) | (f << 6);
-                f = b6 & canFall; b6 = (b6 ^ f) | (f << 6);
+                uint f0 = p0 & canFall; p0 = (p0 ^ f0) | (f0 << 6);
+                uint f1 = p1 & canFall; p1 = (p1 ^ f1) | (f1 << 6);
+                uint f2 = p2 & canFall; p2 = (p2 ^ f2) | (f2 << 6);
                 occ = (occ ^ canFall) | (canFall << 6);
             }
         }
@@ -826,7 +1015,6 @@ public sealed class GeminiOrbSolver : IOrbSolver
         double trueV = combos * 100.0 + weightedElim * 10.0 - steps * 0.5;
         double effectiveScore = allShieldsMet ? trueV : trueV * 0.25;
 
-        // Compute search heuristic
         float potential = ComputeRemainingPotential(b1, weights[1])
                         + ComputeRemainingPotential(b2, weights[2])
                         + ComputeRemainingPotential(b3, weights[3])
@@ -835,16 +1023,11 @@ public sealed class GeminiOrbSolver : IOrbSolver
                         + ComputeRemainingPotential(b6, weights[6]);
 
         float heuristic;
-        if (!ctx.HasShields || !ctx.ShieldsPossible)
+        if (!ctx.ShieldsPossible)
         {
-            if (profile == SearchProfile.CascadeExplorer)
-            {
-                heuristic = (float)trueV + potential * 1.75f + (waves > 1 ? (waves - 1) * 22.0f : 0f);
-            }
-            else
-            {
-                heuristic = (float)trueV + potential;
-            }
+            heuristic = profile == SearchProfile.CascadeExplorer
+                ? (float)trueV + potential * 1.75f + (waves > 1 ? (waves - 1) * 22.0f : 0f)
+                : (float)trueV + potential;
         }
         else if (allShieldsMet)
         {
@@ -855,7 +1038,6 @@ public sealed class GeminiOrbSolver : IOrbSolver
         {
             float comboScale = profile == SearchProfile.ShieldFirst ? 0.20f : 0.70f;
             float shieldScale = profile == SearchProfile.ShieldFirst ? 2.5f : 1.0f;
-
             float shieldProgress = 0f;
 
             // 1. RequiredColorsMask progress
@@ -911,7 +1093,7 @@ public sealed class GeminiOrbSolver : IOrbSolver
                 }
             }
 
-            // 3. Strict PuzzleMask progress
+            // 3. Strict PuzzleMask progress (3-ring gradient + external touch penalty)
             if (puzzleMask != 0)
             {
                 if (puzzleSatisfied)
@@ -931,8 +1113,7 @@ public sealed class GeminiOrbSolver : IOrbSolver
                         uint cb = board.GetColorMask(c);
                         uint w1m = GetLocalColor(c, w1m1, w1m2, w1m3, w1m4, w1m5, w1m6);
 
-                        uint filledMask = cb & puzzleMask;
-                        int filled = BitOperations.PopCount(filledMask);
+                        int filled = BitOperations.PopCount(cb & puzzleMask);
                         int needed = pPop - filled;
 
                         float ps = filled * 540.0f;
@@ -941,7 +1122,6 @@ public sealed class GeminiOrbSolver : IOrbSolver
                         int extMatchTouch = BitOperations.PopCount(w1m & ctx.PuzzleBoundary);
                         if (needed == 0)
                         {
-                            // All puzzle cells filled; breaking external touch is top priority
                             ps -= extMatchTouch * 900.0f;
                             ps -= BitOperations.PopCount(cb & ctx.PuzzleBoundary) * 140.0f;
                         }
@@ -957,9 +1137,14 @@ public sealed class GeminiOrbSolver : IOrbSolver
                             {
                                 int supply2 = Math.Min(remNeed, BitOperations.PopCount(cb & ctx.PuzzleRing2));
                                 ps += supply2 * 65.0f;
+                                remNeed -= supply2;
+                                if (remNeed > 0)
+                                {
+                                    int supply3 = Math.Min(remNeed, BitOperations.PopCount(cb & ctx.PuzzleRing3));
+                                    ps += supply3 * 22.0f;
+                                }
                             }
 
-                            // Penalize external matched orbs touching the puzzle, and stray boundary orbs not next to unfilled slots
                             ps -= extMatchTouch * 380.0f;
                             uint strayBoundary = ctx.PuzzleBoundary & ~adjUnfilled;
                             ps -= BitOperations.PopCount(cb & strayBoundary) * 55.0f;
@@ -992,6 +1177,41 @@ public sealed class GeminiOrbSolver : IOrbSolver
         return hMatch | vMatch;
     }
 
+    // O(1) fast-path for single-component matches (PopCount < 6)
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static void ProcessColorMatchesFast(
+        uint match,
+        float weight,
+        ref int combos,
+        ref double weightedElim)
+    {
+        int totalPop = BitOperations.PopCount(match);
+        weightedElim += totalPop * (double)weight;
+        if (totalPop < 6)
+        {
+            combos++;
+            return;
+        }
+
+        while (match != 0)
+        {
+            uint comp = match & (0u - match);
+            while (true)
+            {
+                uint exp = (comp
+                    | ((comp & NotCol5Mask) << 1)
+                    | ((comp & NotCol0Mask) >> 1)
+                    | (comp << 6)
+                    | (comp >> 6)) & match;
+                if (exp == comp) break;
+                comp = exp;
+            }
+
+            match ^= comp;
+            combos++;
+        }
+    }
+
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static void ProcessColorMatches(
         uint match,
@@ -1012,6 +1232,22 @@ public sealed class GeminiOrbSolver : IOrbSolver
         totalElimMask |= colorBit;
         if (wave == 0) firstWaveElimMask |= colorBit;
 
+        int totalPop = BitOperations.PopCount(match);
+        weightedElim += totalPop * (double)weight;
+
+        // Every valid match component has size >= 3, so totalPop < 6 guarantees exactly 1 component
+        if (totalPop < 6)
+        {
+            combos++;
+            if (totalPop > maxSize) maxSize = totalPop;
+            if (totalPop == 5) aoeMask |= colorBit;
+            if (wave == 0 && puzzleMask != 0 && match == puzzleMask && (puzzleColor == 0 || puzzleColor == color))
+            {
+                puzzleSatisfied = true;
+            }
+            return;
+        }
+
         while (match != 0)
         {
             uint comp = match & (0u - match);
@@ -1029,7 +1265,6 @@ public sealed class GeminiOrbSolver : IOrbSolver
             match ^= comp;
             int size = BitOperations.PopCount(comp);
             combos++;
-            weightedElim += size * (double)weight;
 
             if (size > maxSize) maxSize = size;
             if (size >= 5) aoeMask |= colorBit;
@@ -1043,6 +1278,7 @@ public sealed class GeminiOrbSolver : IOrbSolver
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static float ComputeRemainingPotential(uint r, float weight)
     {
+        if (r == 0) return 0f;
         int cnt = BitOperations.PopCount(r);
         if (cnt < 3) return 0f;
 
@@ -1072,26 +1308,34 @@ public sealed class GeminiOrbSolver : IOrbSolver
              + Math.Min(dPairs, 4) * 0.35f;
     }
 
+    // Strips all isolated singletons in O(1) before flood-fill
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static int LargestClusterSize(uint bits, out uint largestClusterMask)
     {
+        uint adj = bits & Expand4(bits);
+        if (adj == 0)
+        {
+            largestClusterMask = bits & (0u - bits);
+            return bits != 0 ? 1 : 0;
+        }
+
         int best = 0;
         largestClusterMask = 0;
-        while (bits != 0)
+        while (adj != 0)
         {
-            uint comp = bits & (0u - bits);
+            uint comp = adj & (0u - adj);
             while (true)
             {
                 uint exp = (comp
                     | ((comp & NotCol5Mask) << 1)
                     | ((comp & NotCol0Mask) >> 1)
                     | (comp << 6)
-                    | (comp >> 6)) & bits;
+                    | (comp >> 6)) & adj;
                 if (exp == comp) break;
                 comp = exp;
             }
 
-            bits ^= comp;
+            adj ^= comp;
             int cnt = BitOperations.PopCount(comp);
             if (cnt > best)
             {
@@ -1153,61 +1397,48 @@ public sealed class GeminiOrbSolver : IOrbSolver
     };
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private void ResetVisited()
+    {
+        _visitedGen++;
+        if (_visitedGen >= 65535u)
+        {
+            Array.Clear(_visited, 0, VisitedSize);
+            _visitedGen = 1u;
+        }
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private bool TryMarkVisited(ulong hash)
     {
-        ulong key = hash == 0 ? 1UL : hash;
-        int bucket = (int)(key & VisitedBucketMask);
-        if (_visited[bucket] == key || _visited[bucket + 1] == key)
-        {
-            return false;
-        }
+        ulong gen = _visitedGen;
+        ulong sig = hash & 0x0000FFFFFFFFFFFFUL;
+        if (sig == 0) sig = 1UL;
+        ulong entry = (gen << 48) | sig;
 
-        if (_visited[bucket] == 0)
+        // Disjoint 14-bit bucket index from bits 49..62 + 48-bit signature = 62-bit entropy
+        int bucket = (int)((hash >> 48) & VisitedBucketMask);
+        ulong slot0 = _visited[bucket];
+        if (slot0 == entry) return false;
+        ulong slot1 = _visited[bucket + 1];
+        if (slot1 == entry) return false;
+
+        if ((slot0 >> 48) != gen)
         {
-            _visited[bucket] = key;
+            _visited[bucket] = entry;
         }
         else
         {
-            _visited[bucket + 1] = key;
+            _visited[bucket + 1] = entry;
         }
         return true;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static void PushMinHeap(BeamState[] heap, ref int count, int maxWidth, in BeamState state)
+    private static uint FloatToSortableUint(float value)
     {
-        if (count < maxWidth)
-        {
-            int i = count++;
-            float h = state.Heuristic;
-            while (i > 0)
-            {
-                int parent = (i - 1) >> 1;
-                if (heap[parent].Heuristic <= h) break;
-                heap[i] = heap[parent];
-                i = parent;
-            }
-            heap[i] = state;
-        }
-        else if (state.Heuristic > heap[0].Heuristic)
-        {
-            int i = 0;
-            int half = maxWidth >> 1;
-            float h = state.Heuristic;
-            while (i < half)
-            {
-                int child = (i << 1) + 1;
-                int right = child + 1;
-                if (right < maxWidth && heap[right].Heuristic < heap[child].Heuristic)
-                {
-                    child = right;
-                }
-                if (h <= heap[child].Heuristic) break;
-                heap[i] = heap[child];
-                i = child;
-            }
-            heap[i] = state;
-        }
+        uint bits = BitConverter.SingleToUInt32Bits(value);
+        uint mask = (uint)(-(int)(bits >> 31)) | 0x80000000u;
+        return bits ^ mask;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -1254,12 +1485,12 @@ public sealed class GeminiOrbSolver : IOrbSolver
         return new SolveResult(_bestStart, moves);
     }
 
-    private static ulong ComputeBoardHash(in Board6 board)
+    private static ulong ComputeBoardHash(in Board3 board)
     {
         ulong h = 0;
         for (int idx = 0; idx < CellCount; idx++)
         {
-            int c = board.GetColorAt(1u << idx);
+            int c = board.GetColorAt(idx);
             h ^= ZobristOrb[c * CellCount + idx];
         }
         return h;
@@ -1277,8 +1508,7 @@ public sealed class GeminiOrbSolver : IOrbSolver
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static float NextJitter(ref ulong state, float scale)
     {
-        // Uniform in [-scale, +scale]
-        uint u = (uint)(NextSplitMix64(ref state) >> 40); // 24-bit
+        uint u = (uint)(NextSplitMix64(ref state) >> 40);
         float f = u * (1.0f / 8388608.0f) - 1.0f;
         return f * scale;
     }
@@ -1290,73 +1520,52 @@ public sealed class GeminiOrbSolver : IOrbSolver
         ShieldFirst = 2
     }
 
-    private struct Board6
+    // 12-byte bit-sliced board (3 planes encode colors 1..6; 0 = Empty)
+    private struct Board3
     {
-        public uint B1, B2, B3, B4, B5, B6;
+        public uint P0, P1, P2;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void OrColor(int color, uint mask)
+        public readonly int GetColorAt(int idx)
         {
-            switch (color)
-            {
-                case 1: B1 |= mask; break;
-                case 2: B2 |= mask; break;
-                case 3: B3 |= mask; break;
-                case 4: B4 |= mask; break;
-                case 5: B5 |= mask; break;
-                case 6: B6 |= mask; break;
-            }
+            return (int)(((P0 >> idx) & 1u)
+                       | (((P1 >> idx) & 1u) << 1)
+                       | (((P2 >> idx) & 1u) << 2));
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void XorColor(int color, uint mask)
+        public void SwapColors(int c1, int c2, uint swapMask)
         {
-            switch (color)
-            {
-                case 1: B1 ^= mask; break;
-                case 2: B2 ^= mask; break;
-                case 3: B3 ^= mask; break;
-                case 4: B4 ^= mask; break;
-                case 5: B5 ^= mask; break;
-                case 6: B6 ^= mask; break;
-            }
+            int diff = c1 ^ c2;
+            P0 ^= swapMask & (uint)(-(diff & 1));
+            P1 ^= swapMask & (uint)(-((diff >> 1) & 1));
+            P2 ^= swapMask & (uint)(-((diff >> 2) & 1));
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly uint GetColorMask(int color) => color switch
         {
-            1 => B1,
-            2 => B2,
-            3 => B3,
-            4 => B4,
-            5 => B5,
-            6 => B6,
+            1 => P0 & ~P1 & ~P2,
+            2 => ~P0 & P1 & ~P2,
+            3 => P0 & P1 & ~P2,
+            4 => ~P0 & ~P1 & P2,
+            5 => P0 & ~P1 & P2,
+            6 => ~P0 & P1 & P2,
             _ => 0u
         };
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly int GetColorAt(uint bit)
-        {
-            if ((B1 & bit) != 0) return 1;
-            if ((B2 & bit) != 0) return 2;
-            if ((B3 & bit) != 0) return 3;
-            if ((B4 & bit) != 0) return 4;
-            if ((B5 & bit) != 0) return 5;
-            return 6;
-        }
     }
 
+    // Exactly 32 bytes (2 states per 64-byte L1 cache line, zero padding)
     private struct BeamState
     {
-        public Board6 Board;      // 24 bytes
-        public ulong Hash;        // 8 bytes
-        public float Heuristic;   // 4 bytes
-        public float BaseScore;   // 4 bytes
-        public int HistoryIdx;    // 4 bytes
-        public byte Pos;          // 1 byte
-        public byte HeldColor;    // 1 byte
-        public byte PrevDir;      // 1 byte
-        public byte StartPos;     // 1 byte (Total: 48 bytes)
+        public ulong Hash;        // 8 bytes (offset 0)
+        public Board3 Board;      // 12 bytes (offset 8)
+        public float BaseScore;   // 4 bytes (offset 20)
+        public int HistoryIdx;    // 4 bytes (offset 24)
+        public byte Pos;          // 1 byte (offset 28)
+        public byte HeldColor;    // 1 byte (offset 29)
+        public byte PrevDir;      // 1 byte (offset 30)
+        public byte StartPos;     // 1 byte (offset 31)
     }
 
     private readonly struct EvalResult
@@ -1383,6 +1592,7 @@ public sealed class GeminiOrbSolver : IOrbSolver
         public readonly uint PuzzleBoundary;
         public readonly uint PuzzleRing1;
         public readonly uint PuzzleRing2;
+        public readonly uint PuzzleRing3;
         public readonly int PuzzleColor;
         public readonly int PuzzlePopCount;
         public readonly byte FeasiblePuzzleColorsMask;
@@ -1399,6 +1609,7 @@ public sealed class GeminiOrbSolver : IOrbSolver
             uint puzzleBoundary,
             uint puzzleRing1,
             uint puzzleRing2,
+            uint puzzleRing3,
             int puzzleColor,
             int puzzlePopCount,
             byte feasiblePuzzleColorsMask,
@@ -1414,6 +1625,7 @@ public sealed class GeminiOrbSolver : IOrbSolver
             PuzzleBoundary = puzzleBoundary;
             PuzzleRing1 = puzzleRing1;
             PuzzleRing2 = puzzleRing2;
+            PuzzleRing3 = puzzleRing3;
             PuzzleColor = puzzleColor;
             PuzzlePopCount = puzzlePopCount;
             FeasiblePuzzleColorsMask = feasiblePuzzleColorsMask;
