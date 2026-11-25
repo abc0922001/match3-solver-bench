@@ -92,6 +92,45 @@ public sealed class WorkerIntegrationFixture : IDisposable
                                 Thread.Sleep(50);
                             }
 
+                        case 106:
+                        {
+                            // Pure single-threaded CPU spin in the ~25 ms range
+                            var sw = System.Diagnostics.Stopwatch.StartNew();
+                            double acc = 1.0;
+                            while (sw.ElapsedMilliseconds < 25)
+                            {
+                                acc = Math.Sqrt(acc + 1.234567);
+                            }
+                            GC.KeepAlive(acc);
+                            return new SolveResult(new CellCoord(0, 0), new[] { Direction.Right });
+                        }
+
+                        case 107:
+                        {
+                            // Multi-thread cheat via explicit Thread spawning
+                            int workers = Math.Max(2, Environment.ProcessorCount);
+                            var sw = System.Diagnostics.Stopwatch.StartNew();
+                            var threads = new Thread[workers];
+                            for (int i = 0; i < workers; i++)
+                            {
+                                threads[i] = new Thread(() =>
+                                {
+                                    double acc = 1.0;
+                                    while (sw.ElapsedMilliseconds < 60)
+                                    {
+                                        acc = Math.Sqrt(acc + 1.234567);
+                                    }
+                                    GC.KeepAlive(acc);
+                                });
+                                threads[i].Start();
+                            }
+                            for (int i = 0; i < workers; i++)
+                            {
+                                threads[i].Join();
+                            }
+                            return new SolveResult(new CellCoord(0, 0), Array.Empty<Direction>());
+                        }
+
                         default:
                             return new SolveResult(new CellCoord(0, 0), new[] { Direction.Right });
                     }
@@ -248,7 +287,9 @@ public sealed class WorkerIntegrationTests : IClassFixture<WorkerIntegrationFixt
             CreateCase("T1-OOM", PuzzleTier.T1, seed: 104, budgetMs: 2000),
             CreateCase("T1-OK-AFTER-OOM", PuzzleTier.T1, seed: 101, budgetMs: 1000),
             CreateCase("T1-TLE", PuzzleTier.T1, seed: 105, budgetMs: 200),
-            CreateCase("T1-OK-AFTER-TLE", PuzzleTier.T1, seed: 101, budgetMs: 1000)
+            CreateCase("T1-OK-AFTER-TLE", PuzzleTier.T1, seed: 101, budgetMs: 1000),
+            CreateCase("T1-ST-25MS", PuzzleTier.T1, seed: 106, budgetMs: 1000),
+            CreateCase("T1-MT-RAWTHREAD", PuzzleTier.T1, seed: 107, budgetMs: 1000)
         ];
 
         SolverExecutionOutcome outcome = await manager.RunSolverAsync(candidate, warmup, cases);
@@ -275,6 +316,14 @@ public sealed class WorkerIntegrationTests : IClassFixture<WorkerIntegrationFixt
         Assert.Equal(CaseStatus.Ok, run.Cases[4].Status);
         Assert.Equal(CaseStatus.Tle, run.Cases[5].Status);
         Assert.Equal(CaseStatus.Ok, run.Cases[6].Status);
+        Assert.Equal(CaseStatus.Ok, run.Cases[7].Status);
+        Assert.True(
+            run.Cases[8].Status is CaseStatus.RuleViolation or CaseStatus.Ok,
+            $"Unexpected status {run.Cases[8].Status}");
+        if (Environment.ProcessorCount >= 2)
+        {
+            Assert.Equal(CaseStatus.RuleViolation, run.Cases[8].Status);
+        }
     }
 
     [Fact]

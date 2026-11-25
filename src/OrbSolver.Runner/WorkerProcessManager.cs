@@ -41,8 +41,12 @@ internal sealed class WorkerProcessManager
 {
     private const string GcHeapHardLimitHex = "0x20000000"; // 512 MiB
     private const int HardKillGraceMs = 500;
-    private const int SingleThreadCpuMinWallMs = 20;
-    private const double SingleThreadCpuRatioLimit = 1.15;
+    internal const double SingleThreadCpuMinWallMs = 20.0;
+    internal const double SingleThreadCpuRatioLimit = 1.15;
+    internal const double SingleThreadCpuFixedMarginMs = 5.0;
+
+    internal static double ComputeSingleThreadCpuLimitMs(double wallMs) =>
+        wallMs * SingleThreadCpuRatioLimit + SingleThreadCpuFixedMarginMs;
 
     private readonly string _workerDllPath;
 
@@ -281,6 +285,7 @@ internal sealed class WorkerProcessManager
 
         psi.ArgumentList.Add(_workerDllPath);
         psi.Environment["DOTNET_GCHeapHardLimit"] = GcHeapHardLimitHex;
+        psi.Environment["DOTNET_gcConcurrent"] = "0";
 
         var process = Process.Start(psi)
             ?? throw new InvalidOperationException($"Failed to start OrbSolver.Worker process '{_workerDllPath}'.");
@@ -599,14 +604,15 @@ internal sealed class WorkerProcessManager
             return (ZeroRecord(puzzle, CaseStatus.Re, resp.ErrorMessage ?? $"Worker returned status '{resp.Status}'.", peakWs, peakPm), false);
         }
 
+        double cpuLimitMs = ComputeSingleThreadCpuLimitMs(resp.WallMs);
         if (mode == ExecutionMode.SingleThread
             && resp.WallMs >= SingleThreadCpuMinWallMs
-            && resp.CpuMs > resp.WallMs * SingleThreadCpuRatioLimit)
+            && resp.CpuMs > cpuLimitMs)
         {
             return (new RawCaseExecution(
                 Puzzle: puzzle,
                 Status: CaseStatus.RuleViolation,
-                StatusReason: $"SingleThread rule violation: CpuMs={resp.CpuMs:F2} > WallMs*1.15 ({resp.WallMs * SingleThreadCpuRatioLimit:F2}).",
+                StatusReason: $"SingleThread rule violation: CpuMs={resp.CpuMs:F2} > WallMs*1.15+5.0 ({cpuLimitMs:F2}).",
                 Simulation: null,
                 RawValue: 0.0,
                 WallMs: resp.WallMs,

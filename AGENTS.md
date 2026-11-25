@@ -76,24 +76,27 @@ match3-solver-bench/
 4. **評分公式與硬門檻（`ScoringEngine` & `BenchmarkCoordinator`）**：
    - 硬門檻：`INVALID_PATH`、`TLE`、`RE`、`OOM`、`RULE_VIOLATION` 一律 `CaseScore = 0`。
    - 原始價值：$V = \text{Combos} \times 100 + \sum_{c=1}^{6} (\text{Eliminated}_c \times W_c \times 10) - \text{Steps} \times 0.5$。
-   - 正規化分母：$D = \max(V_{\text{ref}}, V_{\max})$，其中 $V_{\text{ref}}$ 在同場有 `Baseline.ReferenceBeam` 時優先取其 `RawValue`。
+   - 正規化分母：$D = \max(V_{\text{ref}}, V_{\max})$。有盾題目且全場至少有一解破盾時，$V_{\max}$ 與 $V_{\text{ref}}$ 僅採計 `Status == OK` 且 `AllShieldsSatisfied == true` 的破盾合格解（基準解未破盾時不採計其 `RawValue`）；若全場無人破盾則退回全部 `OK` 解計算。
    - 盾牌未全數滿足時，$S_{\text{quality}}$ 上限鎖死在 `25` 分（依 $25 \times V / D$ 縮放）。
    - 單題總分：$0.65 \times S_{\text{quality}} + 0.20 \times S_{\text{speed}} + 0.15 \times S_{\text{memory}}$。
    - 層級權重：`T1` 15%、`T2` 15%、`T3` 20%、`T4` 25%、`T5` 25%（`Warmup` 不計分）。
 5. **隔離與資源控制（`OrbSolver.Worker` & `OrbSolver.Runner`）**：
    - `PluginLoadContext` 遇到 `OrbSolver.Contracts` 必須回傳 `null` 委派給 `AssemblyLoadContext.Default`，避免跨 Context 型別轉換失敗（`InvalidCastException`）。
    - 呼叫 `IOrbSolver.Solve` 前必先將 `Console.Out` 重新導向，防止模型印出字串汙染 NDJSON `stdout` IPC 通道。
-   - Runner 啟動 Worker 時注入 `DOTNET_GCHeapHardLimit=0x20000000`（512 MiB）；單題超過 `TimeBudgetMs + 500 ms` 由 Runner `Kill(entireProcessTree: true)` 判 `TLE` 並自動重啟新 Worker 跑下一題。
+   - Runner 啟動 Worker 時注入 `DOTNET_GCHeapHardLimit=0x20000000`（512 MiB）與 `DOTNET_gcConcurrent=0`（關閉背景並發 GC 干擾）；單題超過 `TimeBudgetMs + 500 ms` 由 Runner `Kill(entireProcessTree: true)` 判 `TLE` 並自動重啟新 Worker 跑下一題。
    - `OrbSolver.Runner` 具備 `#if DEBUG` 守衛：Debug 組建未傳入 `--dev` 會直接拒跑並回傳非零結束碼；預設掃描 `solvers/` 會略過 `Solver.Template`（除非明確在 `--filter` 指定）。
 
 ---
 
 ## 4. 踩過的真實陷阱與避坑指南（必讀）
 
-### 陷阱 1：Windows 15.625 ms CPU 計時量子 + Dynamic PGO 導致單執行緒誤判 `RULE_VIOLATION`
-- **現象**：`plan.md` §6.2 規定當 `WallMs >= 20` 且 `CpuMs > WallMs * 1.15` 時判為 `RULE_VIOLATION`。然而在 Windows 上，`Environment.CpuUsage.TotalTime`（底層 `GetProcessTimes`）是以 **15.625 ms（1/64 秒）** 為跳動量子。當純單執行緒的 `Baseline.ReferenceBeam` 在 `T4-SYN-01`（開啟 8 方向斜轉）跑約 `22 ms` 時，若剛好跨越兩個 Windows 排程 tick，會回報 `CpuMs = 31.25 ms > 22.1 * 1.15`，導致 E2E 測試 `T1-F05-04` 間歇性失敗。
-- **二次陷阱**：初版修復在 `RefineBorderlineCpuMs` 僅設 `MaxBurstCalls = 10`（目標 160 ms），結果前 5 輪結束後 Tier-1 Dynamic PGO 已將熱點迴圈加速至 ~4 ms，導致 10 次呼叫僅跑了 ~40 ms 就提早結束並退回 `31.25 ms` fallback，使 E2E 在重跑時再次失敗。
-- **現行解法（勿破壞）**：位於 `src/OrbSolver.Worker/BenchmarkExecutor.cs` 的 `RefineBorderlineCpuMs` 會在 `SingleThread` 且 `20 <= medianWallMs < 150` 且 `medianCpuMs > medianWallMs * 1.15` 時，發送 `cpu-verify` 心跳並連續執行最多 `MaxBurstCalls = 500` 次直到累積 `>= 200 ms`（最少 `150 ms`）連續掛鐘視窗來換算出精確 CPU/Wall 比率。既保留 `WorkerProcessManager` 的 `20 ms / 1.15x` 判定門檻，也消除單 tick 量子雜訊。
+### 陷阱 1：Windows 15.625 ms CPU 計時量子 + Tier-1 JIT／背景執行緒導致單執行緒誤判 `RULE_VIOLATION`
+- **現象**：當初規定 `WallMs >= 20` 且 `CpuMs > WallMs * 1.15` 時判為 `RULE_VIOLATION`。然而在 Windows 上，`Environment.CpuUsage.TotalTime`（`GetProcessTimes`）以 **15.625 ms（1/64 秒）** 為量子且加總全行程所有執行緒。即使先用 200 ms 二次驗證換算比率，在 200 ms 視窗內只要跨 1 個排程邊界加上 1 個背景 Tier-1 JIT／Timer 執行緒 tick（合計 `15 × 15.625 = 234.375 ms`），仍會在 ~21 ms 單執行緒題目（如 `Baseline.ReferenceBeam` 的 `T4-SYN-01` 與 `Solver.GeminiNeonHigh` 的 `T5-07`）出現 `1.17x` 比值而誤判 0 分。
+- **二次陷阱**：若將 `MaxBurstCalls` 設太小（如 `10`），Tier-1 Dynamic PGO 加速後總時間不足累積可靠視窗；而若只拉長到 200 ms 仍難壓低雙 tick 量子誤差。
+- **現行解法（勿破壞）**：
+  1. `src/OrbSolver.Worker/ThreadCpuClock.cs` 透過 `GetThreadTimes`（Windows）／`clock_gettime(CLOCK_THREAD_CPUTIME_ID)`（Linux）量測呼叫執行緒自身 CPU 時間，並以 `min(ProcessCpuMs, min(ThreadCpuMs, WallMs) + max(0, ProcessCpuMs - ThreadCpuMs))` 扣除呼叫執行緒量子膨脹、同時 100% 保留任何背景／平行執行緒 CPU。
+  2. `WorkerProcessManager` 注入 `DOTNET_gcConcurrent=0` 關閉背景並發 GC，並將單執行緒上限調整為 `WallMs * 1.15 + 5.0`（於 `WallMs >= 20` 套用）。
+  3. `BenchmarkExecutor.RefineBorderlineCpuMs` 僅在落於臨界帶（`limit < medianCpuMs <= limit + 40 ms`）時，先跑 1 次 settle 呼叫 + `Thread.Sleep(15)` 排空 Tier-1 JIT，再於 `500 ms`（最少 `300 ms`）視窗搭配每輪 `cpu-verify` 心跳量測換算。
 
 ### 陷阱 2：自動化測試斷言鎖定的字串與 JSON 契約不可改動
 翻譯或重構專案時，以下介面與字串受到單元測試或 E2E（`tests/E2E/`）嚴格檢查，**不可更動**：

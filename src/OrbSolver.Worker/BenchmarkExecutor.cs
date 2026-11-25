@@ -7,6 +7,10 @@ internal static class BenchmarkExecutor
 {
     public const int WarmupRounds = 2;
     public const int MeasuredIterations = 5;
+    private const double SingleThreadCpuMinWallMs = 20.0;
+    private const double SingleThreadCpuRatioLimit = 1.15;
+    private const double SingleThreadCpuFixedMarginMs = 5.0;
+    private const double BorderlineRefinementUpperSlackMs = 40.0;
 
     private readonly record struct IterationSample(
         byte StartRow,
@@ -99,10 +103,13 @@ internal static class BenchmarkExecutor
             long wallEnd;
             TimeSpan cpuBefore;
             TimeSpan cpuAfter;
+            TimeSpan? threadCpuBefore;
+            TimeSpan? threadCpuAfter;
 
             try
             {
                 cts.CancelAfter(Math.Max(1, options.TimeBudgetMs));
+                threadCpuBefore = ThreadCpuClock.TryGetCurrentThreadCpuTime();
                 cpuBefore = Environment.CpuUsage.TotalTime;
                 wallStart = Stopwatch.GetTimestamp();
 
@@ -110,6 +117,7 @@ internal static class BenchmarkExecutor
 
                 wallEnd = Stopwatch.GetTimestamp();
                 cpuAfter = Environment.CpuUsage.TotalTime;
+                threadCpuAfter = ThreadCpuClock.TryGetCurrentThreadCpuTime();
             }
             catch (OutOfMemoryException ex)
             {
@@ -146,7 +154,11 @@ internal static class BenchmarkExecutor
             emitProgress(new ProgressMessage(requestId, iter, "done"));
 
             double wallMs = Math.Max(0.0, Stopwatch.GetElapsedTime(wallStart, wallEnd).TotalMilliseconds);
-            double cpuMs = Math.Max(0.0, (cpuAfter - cpuBefore).TotalMilliseconds);
+            double processCpuMs = Math.Max(0.0, (cpuAfter - cpuBefore).TotalMilliseconds);
+            double? threadCpuMs = threadCpuBefore.HasValue && threadCpuAfter.HasValue
+                ? Math.Max(0.0, (threadCpuAfter.Value - threadCpuBefore.Value).TotalMilliseconds)
+                : null;
+            double cpuMs = ThreadCpuClock.ComputeEffectiveCpuMs(wallMs, processCpuMs, threadCpuMs);
             long allocatedBytes = Math.Max(0L, allocAfter - allocBefore);
             double gcPauseMs = Math.Max(0.0, (gcPauseAfter - gcPauseBefore).TotalMilliseconds);
             int gen0 = Math.Max(0, gen0After - gen0Before);
@@ -171,10 +183,11 @@ internal static class BenchmarkExecutor
         double medianWallMs = MedianDouble(samples.Select(static s => s.WallMs));
         double medianCpuMs = MedianDouble(samples.Select(static s => s.CpuMs));
 
+        double cpuLimitMs = medianWallMs * SingleThreadCpuRatioLimit + SingleThreadCpuFixedMarginMs;
         if (solver.Mode == ExecutionMode.SingleThread
-            && medianWallMs >= 20.0
-            && medianWallMs < 150.0
-            && medianCpuMs > medianWallMs * 1.15)
+            && medianWallMs >= SingleThreadCpuMinWallMs
+            && medianCpuMs > cpuLimitMs
+            && medianCpuMs <= cpuLimitMs + BorderlineRefinementUpperSlackMs)
         {
             medianCpuMs = RefineBorderlineCpuMs(solver, requestId, puzzle, medianWallMs, medianCpuMs, emitProgress);
         }
@@ -204,8 +217,8 @@ internal static class BenchmarkExecutor
         Action<ProgressMessage> emitProgress)
     {
         const int MaxBurstCalls = 500;
-        const double TargetBurstWallMs = 200.0;
-        const double MinReliableBurstWallMs = 150.0;
+        const double TargetBurstWallMs = 500.0;
+        const double MinReliableBurstWallMs = 300.0;
 
         try
         {
@@ -217,22 +230,36 @@ internal static class BenchmarkExecutor
             emitProgress(new ProgressMessage(requestId, 0, "cpu-verify"));
 
             int budgetMs = Math.Max(1, puzzle.TimeBudgetMs);
+            using (var settleCts = new CancellationTokenSource(budgetMs))
+            {
+                _ = solver.Solve(in board, in options, settleCts.Token);
+            }
+
+            Thread.Sleep(15);
+
+            TimeSpan? burstThreadCpuBefore = ThreadCpuClock.TryGetCurrentThreadCpuTime();
             TimeSpan burstCpuBefore = Environment.CpuUsage.TotalTime;
             long burstWallStart = Stopwatch.GetTimestamp();
             double burstWallMs = 0.0;
 
             for (int i = 0; i < MaxBurstCalls && burstWallMs < TargetBurstWallMs; i++)
             {
+                emitProgress(new ProgressMessage(requestId, i + 1, "cpu-verify"));
                 using var cts = new CancellationTokenSource(budgetMs);
                 _ = solver.Solve(in board, in options, cts.Token);
                 burstWallMs = Math.Max(0.0, Stopwatch.GetElapsedTime(burstWallStart).TotalMilliseconds);
             }
 
             TimeSpan burstCpuAfter = Environment.CpuUsage.TotalTime;
-            double burstCpuMs = Math.Max(0.0, (burstCpuAfter - burstCpuBefore).TotalMilliseconds);
+            TimeSpan? burstThreadCpuAfter = ThreadCpuClock.TryGetCurrentThreadCpuTime();
+            double burstProcessCpuMs = Math.Max(0.0, (burstCpuAfter - burstCpuBefore).TotalMilliseconds);
+            double? burstThreadCpuMs = burstThreadCpuBefore.HasValue && burstThreadCpuAfter.HasValue
+                ? Math.Max(0.0, (burstThreadCpuAfter.Value - burstThreadCpuBefore.Value).TotalMilliseconds)
+                : null;
+            double effectiveBurstCpuMs = ThreadCpuClock.ComputeEffectiveCpuMs(burstWallMs, burstProcessCpuMs, burstThreadCpuMs);
 
             return burstWallMs >= MinReliableBurstWallMs
-                ? medianWallMs * (burstCpuMs / burstWallMs)
+                ? medianWallMs * (effectiveBurstCpuMs / burstWallMs)
                 : fallbackMedianCpuMs;
         }
         catch

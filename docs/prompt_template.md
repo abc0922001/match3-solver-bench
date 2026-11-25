@@ -152,12 +152,12 @@ public interface IOrbSolver
   - `TLE`：在軟性取消（soft cancellation）時拋出 `OperationCanceledException`，或超過 `TimeBudgetMs + 500 ms`（遭到硬性終止程序）。
   - `OOM`：超過 `512 MiB` 的 GC 堆積區硬上限（`DOTNET_GCHeapHardLimit=0x20000000`）。
   - `RE`：`Solve` 執行期間發生未處理例外。
-  - `RULE_VIOLATION`：宣告為 `ExecutionMode.SingleThread`，實際上卻使用多執行緒（當 `WallTime >= 20 ms` 時，`CpuTime > WallTime * 1.15`）。
+  - `RULE_VIOLATION`：宣告為 `ExecutionMode.SingleThread`，實際上卻使用多執行緒（當 `WallTime >= 20 ms` 時，`CpuTime > WallTime * 1.15 + 5 ms`）。
 
 - **單題分數（`0..100`）**：
   $$\text{CaseScore} = 0.65 \times S_{\text{quality}} + 0.20 \times S_{\text{speed}} + 0.15 \times S_{\text{memory}}$$
   - 原始價值分：$V = \text{Combos} \times 100 + \sum_{c=1}^{6} (\text{Eliminated}_c \times W_c \times 10) - \text{Steps} \times 0.5$
-  - 正規化分母：$D = \max(V_{\text{ref}}, V_{\max})$
+  - 正規化分母：$D = \max(V_{\text{ref}}, V_{\max})$（有盾題目且全場至少有一解破盾時，$V_{\max}$ 與 $V_{\text{ref}}$ 僅採計 `OK` 且 `AllShieldsSatisfied == true` 的破盾合格解；若全場皆未破盾則退回全部 `OK` 解計算）
   - $S_{\text{quality}}$：若存在任何啟用中的盾牌且未全部滿足，上限鎖定為 **25 分**（$25 \times V / D$）；否則為 $\text{Clamp}(100 \times V / D,\ 0,\ 100)$。
   - $S_{\text{speed}}$：若 $T_{\text{wall}} \le 0.1 \times T_{\text{budget}}$ 則為 $100$；若 $T_{\text{wall}} > T_{\text{budget}}$ 則為 $0$；其餘情況為 $100 \times (1 - \ln(T_{\text{wall}} / (0.1 \times T_{\text{budget}})) / \ln(10))$。
   - $S_{\text{memory}}$：$\max(0,\ \text{Clamp}(100 \times (1 - \ln(\max(1, M_{\text{MiB}})) / \ln(64)),\ 0,\ 100) - 5 \times \lfloor \text{GcPauseMs} / 10 \rfloor)$。

@@ -289,8 +289,8 @@ public static class ScoringEngine
     /// <param name="colorWeights">長度為 7 的顏色權重跨度（或為空以預設為 <c>1.0</c>）。</param>
     /// <param name="hasShields">關卡是否啟用特殊盾。</param>
     /// <param name="allShieldsSatisfied">是否滿足所有特殊盾。</param>
-    /// <param name="referenceValue">基準參考原始價值（<c>V_ref</c>）。</param>
-    /// <param name="maxValueInRun">所有合法求解器在此關卡中達成的最大原始價值（<c>V_max</c>）。</param>
+    /// <param name="referenceValue">基準參考原始價值（<c>V_ref</c>；有盾題目且全場有破盾合格解時，僅於基準解亦破盾時採計）。</param>
+    /// <param name="maxValueInRun">所有合格求解器在此關卡中達成的最大原始價值（<c>V_max</c>；有盾題目僅統計破盾合格解，若全場無人破盾則退回全部 <c>OK</c> 解）。</param>
     /// <param name="wallTimeMs">中位數實際經過時間（毫秒）。</param>
     /// <param name="timeBudgetMs">軟性時間預算（毫秒）。</param>
     /// <param name="allocatedBytes">中位數配置受控記憶體位元組數。</param>
@@ -343,8 +343,8 @@ public static class ScoringEngine
     /// <param name="board">關卡盤面快照。</param>
     /// <param name="options">關卡求解選項。</param>
     /// <param name="simulation">權威模擬結果（當 <paramref name="status"/> 為 <see cref="CaseStatus.Ok"/> 時為必填）。</param>
-    /// <param name="referenceValue">基準參考原始價值（<c>V_ref</c>）。</param>
-    /// <param name="maxValueInRun">所有合法求解器在此關卡中達成的最大原始價值（<c>V_max</c>）。</param>
+    /// <param name="referenceValue">基準參考原始價值（<c>V_ref</c>；有盾題目且全場有破盾合格解時，僅於基準解亦破盾時採計）。</param>
+    /// <param name="maxValueInRun">所有合格求解器在此關卡中達成的最大原始價值（<c>V_max</c>；有盾題目僅統計破盾合格解，若全場無人破盾則退回全部 <c>OK</c> 解）。</param>
     /// <param name="wallTimeMs">中位數實際經過時間（毫秒）。</param>
     /// <param name="allocatedBytes">中位數配置受控記憶體位元組數。</param>
     /// <param name="gcPauseMs">中位數 GC 暫停時間（毫秒）。</param>

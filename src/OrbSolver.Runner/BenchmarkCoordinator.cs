@@ -86,13 +86,23 @@ internal static class BenchmarkCoordinator
         ArgumentNullException.ThrowIfNull(fingerprint);
 
         // 第二階段：彙整所有狀態為 OK 的求解器執行結果，計算每道題目的 V_ref 與 V_max（下限鉗制於 >= 0.0）。
+        // 有盾題目優先只採計「破盾合格解（AllShieldsSatisfied == true）」，避免未破盾的高原始分拉高分母；
+        // 若全場沒有任何解題器破盾成功，再退回以全部 OK 解計算分母。
         Dictionary<string, double> vRefByPuzzle = new(benchmarkCases.Count, StringComparer.Ordinal);
         Dictionary<string, double> vMaxByPuzzle = new(benchmarkCases.Count, StringComparer.Ordinal);
 
         foreach (DatasetCase puzzle in benchmarkCases)
         {
-            double vMax = 0.0;
-            double? refBeamRaw = null;
+            bool hasShields = puzzle.PuzzleMask != 0
+                || puzzle.RequiredColorsMask != 0
+                || puzzle.RequireAoeColorMask != 0;
+
+            bool anyQualified = false;
+            double qualifiedVMax = 0.0;
+            double? qualifiedRefBeamRaw = null;
+
+            double allOkVMax = 0.0;
+            double? allOkRefBeamRaw = null;
 
             foreach (RawSolverRun run in rawRuns)
             {
@@ -102,20 +112,48 @@ internal static class BenchmarkCoordinator
                     continue;
                 }
 
-                if (match.RawValue > vMax)
+                if (match.RawValue > allOkVMax)
                 {
-                    vMax = match.RawValue;
+                    allOkVMax = match.RawValue;
                 }
 
-                if (IsReferenceBeam(run))
+                bool isRefBeam = IsReferenceBeam(run);
+                if (isRefBeam)
                 {
-                    refBeamRaw = match.RawValue;
+                    allOkRefBeamRaw = match.RawValue;
+                }
+
+                bool isQualified = !hasShields || (match.Simulation is { AllShieldsSatisfied: true });
+                if (isQualified)
+                {
+                    anyQualified = true;
+                    if (match.RawValue > qualifiedVMax)
+                    {
+                        qualifiedVMax = match.RawValue;
+                    }
+
+                    if (isRefBeam)
+                    {
+                        qualifiedRefBeamRaw = match.RawValue;
+                    }
                 }
             }
 
-            double vRef = Math.Max(0.0, refBeamRaw ?? puzzle.ReferenceValue ?? 0.0);
+            double vMax;
+            double vRef;
+            if (hasShields && anyQualified)
+            {
+                vMax = Math.Max(0.0, qualifiedVMax);
+                vRef = Math.Max(0.0, qualifiedRefBeamRaw ?? puzzle.ReferenceValue ?? 0.0);
+            }
+            else
+            {
+                vMax = Math.Max(0.0, allOkVMax);
+                vRef = Math.Max(0.0, allOkRefBeamRaw ?? puzzle.ReferenceValue ?? 0.0);
+            }
+
             vRefByPuzzle[puzzle.Id] = vRef;
-            vMaxByPuzzle[puzzle.Id] = Math.Max(0.0, vMax);
+            vMaxByPuzzle[puzzle.Id] = vMax;
         }
 
         List<SolverReportRecord> solverReports = new(rawRuns.Count);
