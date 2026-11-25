@@ -812,17 +812,17 @@ public sealed class OrbSolver : IOrbSolver
             uint bit = 1u << color;
             if ((missingRequired & bit) != 0)
             {
-                shieldGuidance += Math.Min(6, nearCounts[color]) * (requiredFirstWaveOnly ? 25.0 : 21.0);
-                shieldGuidance += Math.Min(6, rawColorCounts[color]) * 2.0;
-                shieldGuidance += Math.Min(2, nearDirectCounts[color]) * 26.0;
+                shieldGuidance += Math.Min(6, (int)nearCounts[color]) * (requiredFirstWaveOnly ? 25.0 : 21.0);
+                shieldGuidance += Math.Min(6, (int)rawColorCounts[color]) * 2.0;
+                shieldGuidance += Math.Min(2, (int)nearDirectCounts[color]) * 26.0;
             }
 
             if ((missingAoe & bit) != 0)
             {
-                shieldGuidance += Math.Min(4, largestMarkedGroup[color]) * 24.0;
-                shieldGuidance += Math.Min(5, largestRawComponent[color]) * 13.0;
-                shieldGuidance += Math.Min(5, nearCounts[color]) * 10.0;
-                shieldGuidance += Math.Min(2, nearDirectCounts[color]) * 22.0;
+                shieldGuidance += Math.Min(4, (int)largestMarkedGroup[color]) * 24.0;
+                shieldGuidance += Math.Min(5, (int)largestRawComponent[color]) * 13.0;
+                shieldGuidance += Math.Min(5, (int)nearCounts[color]) * 10.0;
+                shieldGuidance += Math.Min(2, (int)nearDirectCounts[color]) * 22.0;
             }
         }
 
